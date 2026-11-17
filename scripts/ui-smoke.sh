@@ -1,0 +1,46 @@
+#!/bin/bash
+# Prova dell'app su un telefono virtuale: installa, riempie l'app con dati finti, apre le schermate e fa tocchi casuali.
+set -u
+APK=${1:-app-debug.apk}
+PKG=com.micmax.cibo
+OUT=ui-shots
+mkdir -p "$OUT"
+adb wait-for-device
+adb shell settings put global window_animation_scale 0
+adb shell settings put global transition_animation_scale 0
+adb shell settings put global animator_duration_scale 0
+adb install -r -g "$APK" || exit 1
+adb logcat -c
+shot() { sleep "${2:-4}"; adb exec-out screencap -p > "$OUT/$1.png"; echo "schermata: $1"; }
+alive() { adb shell pidof $PKG >/dev/null; }
+why() { adb logcat -d -s AndroidRuntime:E | tail -60; adb logcat -d -s AndroidRuntime:E | tail -60 > "$OUT/crash.txt" || true; }
+start() { adb shell am start -W -n $PKG/.MainActivity "$@" >/dev/null; }
+
+start
+shot 01-home 6
+alive || { echo "::error::L'app si e' chiusa all'avvio"; why; exit 1; }
+
+start --es action backup
+for i in $(seq 1 15); do sleep 2; adb logcat -d -s CIBO_SELFTEST:* | grep -q 'BACKUP' && break; done
+BK=$(adb logcat -d -s CIBO_SELFTEST:* | grep -o 'BACKUP.*' | tail -1)
+echo "Dati: $BK"
+case "$BK" in
+  BACKUP\ bytes=*importati=0/0*) ;;
+  *) echo "::error::Esporta/importa non funziona ($BK)"; adb logcat -d -s AndroidRuntime:E | tail -30; exit 1;;
+esac
+
+for a in diary water calc recipes recipe cooking menu shopping settings web; do
+  start --es action $a
+  shot "02-$a" 6
+  alive || { echo "::error::L'app si e' chiusa nella schermata $a"; why; exit 1; }
+  adb shell input keyevent KEYCODE_BACK
+  adb shell input keyevent KEYCODE_BACK
+  sleep 1
+done
+start
+shot 03-home-con-dati 4
+
+adb shell monkey -p $PKG --throttle 150 --ignore-timeouts --pct-syskeys 0 --pct-appswitch 0 -s 7 300 >"$OUT/monkey.txt" 2>&1
+tail -3 "$OUT/monkey.txt"
+alive || { echo "::error::L'app si e' chiusa durante i tocchi casuali"; why; exit 1; }
+echo "Prova completata"

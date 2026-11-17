@@ -1,0 +1,6 @@
+-keep class com.micmax.cibo.** { *; }
+-keepattributes Signature, InnerClasses, EnclosingMethod, *Annotation*, SourceFile, LineNumberTable
+-keep class com.google.gson.reflect.TypeToken { *; }
+-keep class * extends com.google.gson.reflect.TypeToken
+-dontobfuscate
+-dontwarn sun.misc.**
