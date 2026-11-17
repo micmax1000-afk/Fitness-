@@ -35,6 +35,14 @@ class MainActivity : AppCompatActivity() {
 
     fun toast(m: String) = Toast.makeText(this, m, Toast.LENGTH_SHORT).show()
 
+    // ---------- notifiche ----------
+    private val notifPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    /** Da Android 13 le notifiche vanno permesse: serve per i promemoria. */
+    fun ensureNotificationPermission() {
+        if (android.os.Build.VERSION.SDK_INT >= 33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED)
+            runCatching { notifPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS) }
+    }
+
     // ---------- file ----------
     private var fileCb: ((Uri) -> Unit)? = null
     private val openFile = registerForActivityResult(ActivityResultContracts.OpenDocument()) { u -> if (u != null) fileCb?.invoke(u) }
@@ -125,7 +133,7 @@ class MainActivity : AppCompatActivity() {
     private fun buildHome(): Scr {
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(col(R.color.bg)) }
         val scr = Scr(root)
-        root.addView(header("Cibo e ricette", "⚙️", { openSettings() }, back = false))
+        root.addView(header("Benessere e cibo", "⚙️", { openSettings() }, back = false))
         val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(12), dp(4), dp(12), dp(24)) }
         root.addView(ScrollView(this).apply { addView(body) }, LinearLayout.LayoutParams(-1, 0, 1f))
         fun render() {
@@ -159,7 +167,18 @@ class MainActivity : AppCompatActivity() {
                 sectionLabel(body, "OGGI IN TAVOLA")
                 today.forEach { (m, r) -> listRow(body, "🍳", r.title, m + (r.time.takeIf { it.isNotBlank() }?.let { " · $it" } ?: "")) { showRecipe(r) } }
             }
-            sectionLabel(body, "COSA VUOI FARE")
+            // farmaci di oggi
+            val meds = Meds.load(this).filter { it.times.isNotEmpty() }
+            if (meds.isNotEmpty()) {
+                sectionLabel(body, "FARMACI DI OGGI")
+                meds.forEach { m ->
+                    val taken = Meds.takenToday(this, m.id)
+                    listRow(body, if (Meds.isLow(m)) "⚠️" else "💊", m.name + if (m.dose.isNotBlank()) " · ${m.dose}" else "",
+                        "oggi $taken/${m.times.size} · prossima ${Meds.nextDose(m)}" + if (Meds.isLow(m)) " · scorta quasi finita" else "") {
+                        MaterialAlertDialogBuilder(this).setTitle(m.name).setItems(arrayOf("✅ Ho preso la dose", "Apri i farmaci")) { _, w -> if (w == 0) { Meds.markTaken(this, m.id); render() } else openMeds() }.show()
+                    }
+                }
+            }
             val grid = android.widget.GridLayout(this).apply { columnCount = 3 }
             fun tile(e: String, t: String, f: () -> Unit) = grid.addView(LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; background = roundBg(col(R.color.card), 16, col(R.color.stroke)); setPadding(dp(4), dp(14), dp(4), dp(12))
@@ -167,6 +186,7 @@ class MainActivity : AppCompatActivity() {
                 addView(TextView(this@MainActivity).apply { text = t; textSize = 13f; gravity = Gravity.CENTER; setTextColor(col(R.color.text)); setTypeface(typeface, android.graphics.Typeface.BOLD) })
                 setOnClickListener { f() }
             }, android.widget.GridLayout.LayoutParams().apply { width = 0; columnSpec = android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f); setMargins(dp(4), dp(4), dp(4), dp(4)) })
+            sectionLabel(body, "CIBO")
             tile("📒", "Diario") { openDiary() }
             tile("💧", "Acqua") { openWater() }
             tile("🍳", "Ricette") { openRecipes() }
@@ -174,8 +194,22 @@ class MainActivity : AppCompatActivity() {
             tile("🛒", "Spesa") { openShopping() }
             tile("🧮", "Fabbisogno") { openCalculator() }
             body.addView(grid)
-            if (Food.load(this).isEmpty() && recipes.isEmpty()) {
-                hintLabel(body, "Hai già dati in Web Launcher (diario, ricette)? In ⚙️ → «Importa da Web Launcher» li porti qui.")
+            val grid2 = android.widget.GridLayout(this).apply { columnCount = 3 }
+            fun tile2(e: String, t: String, f: () -> Unit) = grid2.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; background = roundBg(col(R.color.card), 16, col(R.color.stroke)); setPadding(dp(4), dp(14), dp(4), dp(12))
+                addView(TextView(this@MainActivity).apply { text = e; textSize = 26f; gravity = Gravity.CENTER })
+                addView(TextView(this@MainActivity).apply { text = t; textSize = 13f; gravity = Gravity.CENTER; setTextColor(col(R.color.text)); setTypeface(typeface, android.graphics.Typeface.BOLD) })
+                setOnClickListener { f() }
+            }, android.widget.GridLayout.LayoutParams().apply { width = 0; columnSpec = android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f); setMargins(dp(4), dp(4), dp(4), dp(4)) })
+            sectionLabel(body, "SALUTE")
+            tile2("⚖️", "Peso e misure") { openBody() }
+            tile2("💊", "Farmaci") { openMeds() }
+            tile2("🩺", "Visite") { openVisits() }
+            tile2("🆘", "Emergenza") { openEmergency() }
+            tile2("📄", "Referto") { openReport() }
+            body.addView(grid2)
+            if (Food.load(this).isEmpty() && recipes.isEmpty() && Health.load(this).isEmpty()) {
+                hintLabel(body, "Hai già dati in Web Launcher (diario, ricette, peso, farmaci)? In ⚙️ → «Importa da Web Launcher» li porti qui.")
             }
         }
         scr.refresh = { render() }
@@ -208,9 +242,10 @@ class MainActivity : AppCompatActivity() {
                 body.removeAllViews()
                 sectionLabel(body, "IL MIO CORPO")
                 listRow(body, "🧮", "Fabbisogno di calorie", Food.targets(this)?.let { "${it.kcal} kcal al giorno" } ?: "Inserisci sesso, età, altezza e peso") { openCalculator() }
+                listRow(body, "🔔", "Promemoria attivi", Reminders.load(this).size.toString() + " (farmaci, visite, misure)") { ensureNotificationPermission(); toast("Le notifiche sono permesse se vedi i promemoria arrivare") }
                 listRow(body, "🛡", "Allergeni da evitare", Food.avoid(this).takeIf { it.isNotEmpty() }?.joinToString(", ") ?: "Li segnalo quando scansioni un prodotto") { avoidDialog { render() } }
                 sectionLabel(body, "I MIEI DATI")
-                listRow(body, "📥", "Importa da Web Launcher o da un file", "Diario, acqua, ricette e profilo: niente si cancella, i dati si uniscono") { importData() }
+                listRow(body, "📥", "Importa da Web Launcher o da un file", "Diario, acqua, ricette, peso, farmaci, visite: niente si cancella, i dati si uniscono") { importData() }
                 listRow(body, "📤", "Esporta i miei dati", "Un file con tutto: per una copia o per cambiare telefono") {
                     shareFile("cibo-e-ricette.json", "application/json", Backup.export(this), "Esporta i dati")
                 }
@@ -229,7 +264,7 @@ class MainActivity : AppCompatActivity() {
                 val r = text?.let { Backup.import(this, it) }
                 runOnUiThread {
                     if (r == null) toast("Questo file non contiene dati di Cibo e ricette")
-                    else { MaterialAlertDialogBuilder(this).setTitle("✓ Dati importati").setMessage("${r.entries} cibi nel diario, ${r.recipes} ricette, ${r.days} giorni di acqua.").setPositiveButton("Ok", null).show(); refreshTop() }
+                    else { MaterialAlertDialogBuilder(this).setTitle("✓ Dati importati").setMessage("${r.entries} cibi nel diario, ${r.recipes} ricette, ${r.days} giorni di acqua, ${r.measures} misure, ${r.meds} farmaci, ${r.visits} visite.").setPositiveButton("Ok", null).show(); refreshTop() }
                 }
             }
         }
@@ -256,6 +291,11 @@ class MainActivity : AppCompatActivity() {
                 MaterialAlertDialogBuilder(this).setTitle("🛒 Aggiungere alla spesa?").setMessage(lines.take(15).joinToString("\n") + if (lines.size > 15) "\n…" else "")
                     .setPositiveButton("Aggiungi ${lines.size}") { _, _ -> val n = Plan.addToShopping(this, lines); toast("Aggiunte $n voci"); openShopping() }.setNegativeButton("No", null).show()
             }
+            return
+        }
+        i.getStringExtra("open")?.let { o ->
+            i.removeExtra("open")
+            when (o) { "meds" -> openMeds(); "visits" -> openVisits(); "emergency" -> openEmergency(); "body" -> openBody() }
             return
         }
         val action = i.getStringExtra("action") ?: return

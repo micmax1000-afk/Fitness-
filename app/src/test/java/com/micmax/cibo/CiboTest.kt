@@ -77,3 +77,47 @@ class CiboTest {
         assertEquals(0, Plan.todayIndex(mon)); mon.add(java.util.Calendar.DAY_OF_YEAR, 6); assertEquals(6, Plan.todayIndex(mon))
     }
 }
+
+class HealthTest {
+    @Test fun medTimesAndStock() {
+        assertEquals(listOf("08:00", "13:00", "20:30"), Meds.parseTimes("8, 20:30 , 13.00, 99, boh"))
+        val m = Med("1", "X", "", listOf("08:00", "20:00"), 12, 1)
+        assertEquals(2, Meds.perDay(m)); assertEquals(6, Meds.daysLeft(m)); assertFalse(Meds.isLow(m)); assertTrue(Meds.isLow(m.copy(stock = 8)))
+        assertTrue(Meds.isLow(m.copy(stock = 0)))
+        val now = java.util.Calendar.getInstance().apply { set(2026, 10, 17, 9, 0) }
+        assertEquals("20:00", Meds.nextDose(m, now)); assertEquals("domani 08:00", Meds.nextDose(m, java.util.Calendar.getInstance().apply { set(2026, 10, 17, 21, 0) }))
+    }
+
+    @Test fun visitReminders() {
+        val visit = java.util.Calendar.getInstance().apply { set(2026, 10, 20, 15, 30, 0); set(java.util.Calendar.MILLISECOND, 0) }.timeInMillis
+        val now = java.util.Calendar.getInstance().apply { set(2026, 10, 17, 9, 0, 0) }.timeInMillis
+        val t = Visits.reminderTimes(visit, now)
+        assertEquals(2, t.size); assertEquals(visit - 2 * 3_600_000L, t[1])
+        assertEquals(0, Visits.reminderTimes(visit, visit - 3_600_000L).size)
+    }
+
+    @Test fun reminderNextOccurrence() {
+        val day = 86_400_000L
+        val now = java.util.Calendar.getInstance().apply { set(2026, 10, 17, 12, 0, 0); set(java.util.Calendar.MILLISECOND, 0) }.timeInMillis
+        assertEquals(now + 1000, Reminders.nextOccurrence(now + 1000, null, now))
+        assertNull(Reminders.nextOccurrence(now - 1000, null, now))
+        val n = Reminders.nextOccurrence(now - 3 * day - 3_600_000, "day", now)!!
+        assertTrue(n > now && n - now <= day)
+    }
+
+    @Test fun reportAndEmergencyText() {
+        val d = Report.Data("Maria", 0, 86_400_000L * 30, listOf(1L to 64.0, 2L to 62.0), listOf(Triple(1L, 130, 85), Triple(2L, 120, 80)), listOf(3L to 100.0), listOf("Vitamina D (1 cp)"), "Penicillina", "")
+        val s = Report.sections(d).toMap()
+        assertTrue(s.getValue("Peso (kg)")[0].contains("-2,0")); assertTrue(s.getValue("Pressione arteriosa (mmHg)")[0].contains("media 125/82"))
+        assertTrue(Report.sections(d.copy(weights = emptyList(), pressures = emptyList(), glucose = emptyList(), medicines = emptyList(), allergies = "")).any { it.first == "Dati" })
+        assertEquals(listOf("Maria · nato/a il 1985", "Gruppo sanguigno: A+", "⚠️ Allergie: Penicillina"), Emergency.lines(EmergencyCard("Maria", "1985", "A+", "Penicillina")))
+    }
+
+    @Test fun backupWithHealthFields() {
+        val d = Backup.Data(1, measures = listOf(Measure("a", "peso", 70.0, null, 5)), meds = listOf(Med("m", "X", "d", listOf("08:00"), 10)),
+            visits = listOf(Visit("v", "Visita", 99)), emergency = EmergencyCard("Maria"))
+        assertEquals(d, Gson().fromJson(Gson().toJson(d), Backup.Data::class.java))
+        val old = Gson().fromJson("""{"version":1,"entries":[]}""", Backup.Data::class.java)
+        assertTrue(old.measures.isEmpty()); assertNull(old.emergency)
+    }
+}

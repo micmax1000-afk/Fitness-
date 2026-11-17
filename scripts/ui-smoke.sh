@@ -29,7 +29,16 @@ case "$BK" in
   *) echo "::error::Esporta/importa non funziona ($BK)"; adb logcat -d -s AndroidRuntime:E | tail -30; exit 1;;
 esac
 
-for a in diary water calc recipes recipe cooking menu shopping settings web; do
+start --es action reminders
+for i in $(seq 1 15); do sleep 2; adb logcat -d -s CIBO_SELFTEST:* | grep -q 'REMINDERS' && break; done
+RM=$(adb logcat -d -s CIBO_SELFTEST:* | grep -o 'REMINDERS.*' | tail -1)
+echo "Promemoria: $RM"
+case "$RM" in
+  REMINDERS\ count=4\ meds=1\ visite=1\ pdf=true\ peso=62.0*) ;;
+  *) echo "::error::I promemoria o il referto non funzionano ($RM)"; adb logcat -d -s AndroidRuntime:E | tail -30; exit 1;;
+esac
+
+for a in body meds visits emergency report diary water calc recipes recipe cooking menu shopping settings web; do
   start --es action $a
   shot "02-$a" 6
   alive || { echo "::error::L'app si e' chiusa nella schermata $a"; why; exit 1; }

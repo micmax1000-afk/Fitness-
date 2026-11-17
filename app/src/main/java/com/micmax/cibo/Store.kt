@@ -119,6 +119,20 @@ object Plan {
     fun todayIndex(cal: Calendar = Calendar.getInstance()) = (cal.get(Calendar.DAY_OF_WEEK) + 5) % 7
 }
 
+object Store {
+    fun ago(time: Long, now: Long = System.currentTimeMillis()): String {
+        val m = (now - time) / 60_000
+        return when {
+            m < 1 -> "adesso"
+            m < 60 -> "$m min fa"
+            m < 60 * 24 -> "${m / 60} ore fa"
+            m < 60 * 24 * 2 -> "ieri"
+            m < 60 * 24 * 14 -> "${m / (60 * 24)} giorni fa"
+            else -> java.text.SimpleDateFormat("d MMM yyyy", Locale.ITALIAN).format(java.util.Date(time))
+        }
+    }
+}
+
 /** Tutti i dati in un file solo (per passarli da Web Launcher o per fare una copia). */
 object Backup {
     data class Data(
@@ -126,21 +140,24 @@ object Backup {
         val entries: List<FoodEntry> = emptyList(), val water: Map<String, Int> = emptyMap(), val waterGoal: Int = 0, val glass: Int = 0,
         val avoid: List<String> = emptyList(),
         val sex: String = "", val birthYear: Int = 0, val heightCm: Double = 0.0, val activity: Double = 0.0, val goal: String = "", val weightKg: Double = 0.0,
-        val recipes: List<Recipe> = emptyList(), val shopping: List<ShopItem> = emptyList(), val menu: Map<String, String> = emptyMap()
+        val recipes: List<Recipe> = emptyList(), val shopping: List<ShopItem> = emptyList(), val menu: Map<String, String> = emptyMap(),
+        val measures: List<Measure> = emptyList(), val meds: List<Med> = emptyList(), val visits: List<Visit> = emptyList(), val emergency: EmergencyCard? = null
     )
 
     fun export(c: Context): String {
         val p = Food.profile(c)
         return Gson().toJson(Data(1, Food.load(c), Food.waterDays(c), Food.waterGoal(c), Food.glass(c), Food.avoid(c).toList(),
-            p.sex, p.birthYear, p.heightCm, p.activity, p.goal, p.weightKg, Recipes.load(c), Plan.shopping(c), Plan.menu(c)))
+            p.sex, p.birthYear, p.heightCm, p.activity, p.goal, p.weightKg, Recipes.load(c), Plan.shopping(c), Plan.menu(c),
+            Health.load(c), Meds.load(c), Visits.load(c), Emergency.load(c).takeIf { !Emergency.isEmpty(it) }))
     }
 
-    data class Result(val entries: Int, val recipes: Int, val days: Int)
+    data class Result(val entries: Int, val recipes: Int, val days: Int, val measures: Int = 0, val meds: Int = 0, val visits: Int = 0)
 
     /** Unisce i dati del file a quelli che ci sono già (niente si cancella). null se il file non è valido. */
     fun import(c: Context, json: String): Result? {
         val d = runCatching { Gson().fromJson(json, Data::class.java) }.getOrNull() ?: return null
-        if (d.version < 1 || (d.entries.isEmpty() && d.recipes.isEmpty() && d.water.isEmpty() && d.birthYear == 0 && d.shopping.isEmpty() && d.menu.isEmpty())) return null
+        if (d.version < 1 || (d.entries.isEmpty() && d.recipes.isEmpty() && d.water.isEmpty() && d.birthYear == 0 && d.shopping.isEmpty() && d.menu.isEmpty() &&
+                d.measures.isEmpty() && d.meds.isEmpty() && d.visits.isEmpty() && d.emergency == null)) return null
         val ids = Food.load(c).map { it.id }.toSet()
         val newEntries = d.entries.filter { it.id !in ids }
         Food.save(c, Food.load(c) + newEntries)
@@ -156,6 +173,17 @@ object Backup {
         if (d.glass > 0) Food.setGlass(c, d.glass)
         Plan.addToShopping(c, d.shopping.filter { !it.done }.map { it.text })
         if (Plan.menu(c).isEmpty() && d.menu.isNotEmpty()) Plan.saveMenu(c, d.menu)
-        return Result(newEntries.size, newRecipes.size, days)
+        // salute: le misure si uniscono; farmaci e visite si rimettono con promemoria nuovi (quelli vecchi sono dell'altra app)
+        val mids = Health.load(c).map { it.id }.toSet()
+        val newMeasures = d.measures.filter { it.id !in mids }
+        if (newMeasures.isNotEmpty()) { Health.save(c, Health.load(c) + newMeasures); Health.syncWeight(c) }
+        val medIds = Meds.load(c).map { it.id }.toSet()
+        val newMeds = d.meds.filter { it.id !in medIds }
+        newMeds.forEach { Meds.upsert(c, it.copy(reminderIds = emptyList())) }
+        val visitIds = Visits.load(c).map { it.id }.toSet()
+        val newVisits = d.visits.filter { it.id !in visitIds }
+        newVisits.forEach { Visits.upsert(c, it.copy(reminderIds = emptyList())) }
+        if (Emergency.isEmpty(Emergency.load(c)) && d.emergency != null) Emergency.save(c, d.emergency)
+        return Result(newEntries.size, newRecipes.size, days, newMeasures.size, newMeds.size, newVisits.size)
     }
 }

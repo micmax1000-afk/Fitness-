@@ -246,7 +246,7 @@ fun MainActivity.openCalculator() {
             listRow(body, "⚖️", "Peso", if (w > 0) "%.1f kg".format(Locale.ITALIAN, w) else "Da inserire") {
                 val et = field("Chili (es. 72,5)", w.takeIf { it > 0 }?.let { OpenFoodFacts.fmt(it) }, number = true)
                 MaterialAlertDialogBuilder(this).setTitle("Peso").setView(form(et)).setPositiveButton("Salva") { _, _ ->
-                    val k = Calc.num(et.text.toString()); if (k == null || k !in 20.0..400.0) toast("Peso non valido") else { Food.saveProfile(this, p.copy(weightKg = k)); render() }
+                    val k = Calc.num(et.text.toString()); if (k == null || k !in 20.0..400.0) toast("Peso non valido") else { Health.add(this, Measure(UUID.randomUUID().toString(), "peso", k, null, System.currentTimeMillis())); render() }
                 }.setNegativeButton("Annulla", null).show()
             }
             listRow(body, "🏃", "Attività", Nutrition.ACTIVITY.firstOrNull { it.second == p.activity }?.first ?: "Leggero") {
