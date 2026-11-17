@@ -19,9 +19,24 @@ object Selftest {
         Recipes.save(a, listOf(r))
         Plan.saveMenu(a, mapOf(Plan.menuKey(Plan.todayIndex(), "pranzo") to r.id))
         Plan.saveShopping(a, listOf(ShopItem("1", "Latte"), ShopItem("2", "Pane", true)))
+        val day = 86_400_000L
+        Health.save(a, listOf(
+            Measure("m1", "peso", 64.0, null, now - 20 * day), Measure("m2", "peso", 63.2, null, now - 10 * day), Measure("m3", "peso", 62.0, null, now - day),
+            Measure("m4", "pressione", 128.0, 82.0, now - 5 * day), Measure("m5", "pressione", 122.0, 79.0, now - day), Measure("m6", "glicemia", 96.0, null, now - 3 * day)))
+        if (Meds.load(a).isEmpty()) Meds.upsert(a, Med("med1", "Vitamina D", "1 compressa", listOf("08:00", "20:00"), 12, 1))
+        if (Visits.load(a).isEmpty()) Visits.upsert(a, Visit("vis1", "Cardiologo", now + 3 * day, "Ospedale"))
+        Emergency.save(a, EmergencyCard("Maria Rossi", "1985", "A+", "Penicillina", "", "Vitamina D", "Luca", "333 1234567"))
     }
 
     fun run(a: MainActivity, action: String) {
+        if (action == "reminders") {
+            seed(a)
+            val l = Reminders.load(a)
+            val pdf = java.io.File(a.cacheDir, "prova-referto.pdf")
+            writeReportPdf(reportData(a, System.currentTimeMillis() - 30 * 86_400_000L, System.currentTimeMillis()), pdf)
+            Log.i(TAG, "REMINDERS count=${l.size} meds=${Meds.load(a).size} visite=${Visits.load(a).size} pdf=${pdf.length() > 500} peso=${Food.profile(a).weightKg}")
+            return
+        }
         if (action == "backup") {
             // esporta e reimporta: i numeri devono tornare
             seed(a)
@@ -44,6 +59,11 @@ object Selftest {
                 "shopping" -> a.openShopping()
                 "web" -> a.openRecipeWeb("https://www.giallozafferano.it/")
                 "settings" -> a.addMealMenu()
+                "body" -> a.openBody()
+                "meds" -> a.openMeds()
+                "visits" -> a.openVisits()
+                "emergency" -> a.openEmergency()
+                "report" -> a.openReport()
                 else -> {}
             }
         }
