@@ -12,6 +12,10 @@ App Android per il cibo, la cucina e la salute, senza AI: i dati restano sul tel
 - **Visite** con promemoria la sera prima e due ore prima
 - **Scheda d'emergenza**, a scelta visibile anche a schermo bloccato
 - **Referto per il medico** in PDF
+- **Passi e sonno** da Health Connect (l'app dell'orologio li condivide col telefono): obiettivo dei passi, sonno con fasi, promemoria per andare a letto, sonno inserito a mano
+- **Allenamento**: schede (serie, ripetizioni, riposo con cronometro, bip e voce), Tabata e intervalli, allenamenti inseriti a mano, obiettivo settimanale con serie di settimane
+- **Home «Oggi»** con calorie, acqua, passi, sonno, allenamenti della settimana e farmaci da prendere
+- **Tema** chiaro, scuro o come il telefono
 - **Esporta / Importa**: un file con tutto. «Importa» legge anche i dati di Web Launcher (stessi nomi dei campi)
 
 ## Costruzione
@@ -27,5 +31,5 @@ Per aggiornamenti installabili sopra la versione precedente servono i secret
 ## Limiti
 
 - Niente foto del piatto né del frigo (servono l'AI): restano in Web Launcher.
-- Niente promemoria per bere (per ora). Niente passi, sonno e allenamento (fasi successive).
+- Niente promemoria per bere (per ora). Niente GPS né fascia cardio nell'allenamento. I passi vengono da Health Connect (serve un orologio o un'app che li conta).
 - I prodotti di Open Food Facts li inseriscono gli utenti: controlla sempre l'etichetta.

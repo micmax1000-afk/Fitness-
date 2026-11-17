@@ -38,7 +38,7 @@ object Health {
 
     fun fmt(m: Measure): String {
         val n = { v: Double -> if (v % 1.0 == 0.0) v.toLong().toString() else String.format(Locale.ITALIAN, "%.1f", v) }
-        return n(m.v1) + (m.v2?.let { "/" + n(it) } ?: "") + " " + (TYPES[m.type]?.second ?: "")
+        return n(m.v1) + (m.v2?.let { "/" + n(it) } ?: "") + " " + (if (m.type == "sonno") "h" else TYPES[m.type]?.second ?: "")
     }
 
     /** Salva una misurazione; il peso aggiorna anche il profilo (da cui dipende il fabbisogno di calorie). */
