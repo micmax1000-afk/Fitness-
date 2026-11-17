@@ -12,7 +12,7 @@ android {
         minSdk = 26
         targetSdk = 34
         versionCode = System.getenv("CIBO_VERSION_CODE")?.toIntOrNull() ?: 1
-        versionName = "1.1.0"
+        versionName = "1.2.0"
         resourceConfigurations += listOf("it", "en")
     }
 
@@ -56,6 +56,7 @@ dependencies {
     implementation("com.google.android.material:material:1.11.0")
     implementation("androidx.activity:activity-ktx:1.8.2")
     implementation("com.google.code.gson:gson:2.10.1")
+    implementation("androidx.health.connect:connect-client:1.1.0-alpha07")   // passi, sonno e allenamenti dell'orologio (solo lettura)
     implementation("com.google.android.gms:play-services-code-scanner:16.1.0")   // codice a barre
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20231013")

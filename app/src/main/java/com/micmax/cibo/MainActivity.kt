@@ -13,6 +13,7 @@ import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.FileProvider
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import java.io.File
@@ -34,6 +35,9 @@ class MainActivity : AppCompatActivity() {
     private val stack = ArrayList<Scr>()
 
     fun toast(m: String) = Toast.makeText(this, m, Toast.LENGTH_SHORT).show()
+
+    // ---------- Health Connect ----------
+    val hcPermission = registerForActivityResult(androidx.health.connect.client.PermissionController.createRequestPermissionResultContract()) { _ -> syncHealthConnect(true) { refreshTop() } }
 
     // ---------- notifiche ----------
     private val notifPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
@@ -105,6 +109,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        AppCompatDelegate.setDefaultNightMode(themeMode())
         super.onCreate(savedInstanceState)
         host = FrameLayout(this).apply { setBackgroundColor(col(R.color.bg)) }
         setContentView(host)
@@ -122,6 +127,15 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() { tts?.shutdown(); super.onDestroy() }
 
+    /** Tema: 0 come il telefono, 1 chiaro, 2 scuro. */
+    fun themeChoice() = getSharedPreferences("cibo", MODE_PRIVATE).getInt("theme", 0)
+    private fun themeMode() = when (themeChoice()) { 1 -> AppCompatDelegate.MODE_NIGHT_NO; 2 -> AppCompatDelegate.MODE_NIGHT_YES; else -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM }
+    fun setThemeChoice(v: Int) {
+        getSharedPreferences("cibo", MODE_PRIVATE).edit().putInt("theme", v).apply()
+        AppCompatDelegate.setDefaultNightMode(themeMode())
+        recreate()
+    }
+
     var tts: android.speech.tts.TextToSpeech? = null
     fun speak(text: String) {
         if (tts == null) { tts = android.speech.tts.TextToSpeech(this) { st -> if (st == android.speech.tts.TextToSpeech.SUCCESS) { tts?.language = Locale.ITALIAN; tts?.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "step") } }; return }
@@ -136,12 +150,25 @@ class MainActivity : AppCompatActivity() {
         root.addView(header("Benessere e cibo", "⚙️", { openSettings() }, back = false))
         val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(12), dp(4), dp(12), dp(24)) }
         root.addView(ScrollView(this).apply { addView(body) }, LinearLayout.LayoutParams(-1, 0, 1f))
+        fun tiles(items: List<Triple<String, String, () -> Unit>>) {
+            val grid = android.widget.GridLayout(this).apply { columnCount = 3 }
+            items.forEach { (e, t, f) ->
+                grid.addView(LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; background = roundBg(col(R.color.card), 16, col(R.color.stroke)); setPadding(dp(4), dp(14), dp(4), dp(12))
+                    addView(TextView(this@MainActivity).apply { text = e; textSize = 26f; gravity = Gravity.CENTER })
+                    addView(TextView(this@MainActivity).apply { text = t; textSize = 13f; gravity = Gravity.CENTER; setTextColor(col(R.color.text)); setTypeface(typeface, android.graphics.Typeface.BOLD) })
+                    setOnClickListener { f() }
+                }, android.widget.GridLayout.LayoutParams().apply { width = 0; columnSpec = android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f); setMargins(dp(4), dp(4), dp(4), dp(4)) })
+            }
+            body.addView(grid)
+        }
         fun render() {
             body.removeAllViews()
             val key = Food.dayKey(System.currentTimeMillis())
             val tot = Food.totals(Food.day(Food.load(this), key))
             val target = Food.targets(this)
             val ml = Food.waterMl(this); val goal = Food.waterGoal(this)
+            val snap = Hc.cached(this)
             sectionLabel(body, "OGGI")
             val card = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL; background = roundBg(col(R.color.card), 18, col(R.color.stroke)); setPadding(dp(16), dp(14), dp(16), dp(10))
@@ -160,13 +187,16 @@ class MainActivity : AppCompatActivity() {
             small("＋ Pasto") { addMealMenu() }
             card.addView(btns)
             body.addView(card)
-            // menu di oggi
-            val menu = Plan.menu(this); val recipes = Recipes.load(this)
-            val today = Plan.MENU_MEALS.mapNotNull { (mk, ml2) -> menu[Plan.menuKey(Plan.todayIndex(), mk)]?.let { id -> recipes.firstOrNull { it.id == id }?.let { ml2 to it } } }
-            if (today.isNotEmpty()) {
-                sectionLabel(body, "OGGI IN TAVOLA")
-                today.forEach { (m, r) -> listRow(body, "🍳", r.title, m + (r.time.takeIf { it.isNotBlank() }?.let { " · $it" } ?: "")) { showRecipe(r) } }
-            }
+            // passi, sonno, allenamenti della settimana
+            val steps = Hc.today(snap)?.steps ?: 0L
+            val night = Hc.lastNight(snap)
+            val manualSleep = Health.load(this).filter { it.type == "sonno" }.maxByOrNull { it.time }
+            val sleepText = night?.let { Hc.duration(it.sleepMin) } ?: manualSleep?.takeIf { System.currentTimeMillis() - it.time < 36 * 3_600_000L }?.let { Hc.duration((it.v1 * 60).toLong()) } ?: "—"
+            val n = Fitness.weekCount(Fitness.allTimes(this)); val wgoal = Fitness.weeklyGoal(this)
+            body.addView(statRow(
+                Triple("👟 Passi", if (steps > 0) String.format(Locale.ITALIAN, "%,d", steps) else "—", null),
+                Triple("😴 Sonno", sleepText, "ultima notte"),
+                Triple("🏋 Settimana", "$n / $wgoal", "allenamenti")))
             // farmaci di oggi
             val meds = Meds.load(this).filter { it.times.isNotEmpty() }
             if (meds.isNotEmpty()) {
@@ -179,41 +209,29 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             }
-            val grid = android.widget.GridLayout(this).apply { columnCount = 3 }
-            fun tile(e: String, t: String, f: () -> Unit) = grid.addView(LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; background = roundBg(col(R.color.card), 16, col(R.color.stroke)); setPadding(dp(4), dp(14), dp(4), dp(12))
-                addView(TextView(this@MainActivity).apply { text = e; textSize = 26f; gravity = Gravity.CENTER })
-                addView(TextView(this@MainActivity).apply { text = t; textSize = 13f; gravity = Gravity.CENTER; setTextColor(col(R.color.text)); setTypeface(typeface, android.graphics.Typeface.BOLD) })
-                setOnClickListener { f() }
-            }, android.widget.GridLayout.LayoutParams().apply { width = 0; columnSpec = android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f); setMargins(dp(4), dp(4), dp(4), dp(4)) })
+            // menu di oggi
+            val menu = Plan.menu(this); val recipes = Recipes.load(this)
+            val today = Plan.MENU_MEALS.mapNotNull { (mk, ml2) -> menu[Plan.menuKey(Plan.todayIndex(), mk)]?.let { id -> recipes.firstOrNull { it.id == id }?.let { ml2 to it } } }
+            if (today.isNotEmpty()) {
+                sectionLabel(body, "OGGI IN TAVOLA")
+                today.forEach { (mm, r) -> listRow(body, "🍳", r.title, mm + (r.time.takeIf { it.isNotBlank() }?.let { " · $it" } ?: "")) { showRecipe(r) } }
+            }
             sectionLabel(body, "CIBO")
-            tile("📒", "Diario") { openDiary() }
-            tile("💧", "Acqua") { openWater() }
-            tile("🍳", "Ricette") { openRecipes() }
-            tile("📅", "Menu") { openMenu() }
-            tile("🛒", "Spesa") { openShopping() }
-            tile("🧮", "Fabbisogno") { openCalculator() }
-            body.addView(grid)
-            val grid2 = android.widget.GridLayout(this).apply { columnCount = 3 }
-            fun tile2(e: String, t: String, f: () -> Unit) = grid2.addView(LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; background = roundBg(col(R.color.card), 16, col(R.color.stroke)); setPadding(dp(4), dp(14), dp(4), dp(12))
-                addView(TextView(this@MainActivity).apply { text = e; textSize = 26f; gravity = Gravity.CENTER })
-                addView(TextView(this@MainActivity).apply { text = t; textSize = 13f; gravity = Gravity.CENTER; setTextColor(col(R.color.text)); setTypeface(typeface, android.graphics.Typeface.BOLD) })
-                setOnClickListener { f() }
-            }, android.widget.GridLayout.LayoutParams().apply { width = 0; columnSpec = android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f); setMargins(dp(4), dp(4), dp(4), dp(4)) })
+            tiles(listOf(Triple("📒", "Diario") { openDiary() }, Triple("💧", "Acqua") { openWater() }, Triple("🍳", "Ricette") { openRecipes() },
+                Triple("📅", "Menu") { openMenu() }, Triple("🛒", "Spesa") { openShopping() }, Triple("🧮", "Fabbisogno") { openCalculator() }))
+            sectionLabel(body, "MOVIMENTO")
+            tiles(listOf(Triple("👟", "Passi") { openSteps() }, Triple("😴", "Sonno") { openSleep() }, Triple("🏋️", "Allenamento") { openTrain() },
+                Triple("🏋️‍♀️", "Schede") { openPlans() }, Triple("⏱", "Tabata") { openTabata() }, Triple("⌚", "Orologio") { openHcConnect() }))
             sectionLabel(body, "SALUTE")
-            tile2("⚖️", "Peso e misure") { openBody() }
-            tile2("💊", "Farmaci") { openMeds() }
-            tile2("🩺", "Visite") { openVisits() }
-            tile2("🆘", "Emergenza") { openEmergency() }
-            tile2("📄", "Referto") { openReport() }
-            body.addView(grid2)
+            tiles(listOf(Triple("⚖️", "Peso e misure") { openBody() }, Triple("💊", "Farmaci") { openMeds() }, Triple("🩺", "Visite") { openVisits() },
+                Triple("🆘", "Emergenza") { openEmergency() }, Triple("📄", "Referto") { openReport() }))
             if (Food.load(this).isEmpty() && recipes.isEmpty() && Health.load(this).isEmpty()) {
-                hintLabel(body, "Hai già dati in Web Launcher (diario, ricette, peso, farmaci)? In ⚙️ → «Importa da Web Launcher» li porti qui.")
+                hintLabel(body, "Hai già dati in Web Launcher (diario, ricette, peso, farmaci, allenamenti)? In ⚙️ → «Importa da Web Launcher» li porti qui.")
             }
         }
         scr.refresh = { render() }
         render()
+        syncHealthConnect { if (stack.lastOrNull() === scr) render() }
         return scr
     }
 
@@ -240,12 +258,16 @@ class MainActivity : AppCompatActivity() {
         openScreen("Impostazioni") { body, scr ->
             fun render() {
                 body.removeAllViews()
+                sectionLabel(body, "ASPETTO")
+                listRow(body, "🎨", "Tema", listOf("Come il telefono", "Chiaro", "Scuro")[themeChoice()]) {
+                    MaterialAlertDialogBuilder(this).setTitle("Tema").setSingleChoiceItems(arrayOf("Come il telefono", "Chiaro", "Scuro"), themeChoice()) { dl, w -> dl.dismiss(); setThemeChoice(w) }.show()
+                }
                 sectionLabel(body, "IL MIO CORPO")
                 listRow(body, "🧮", "Fabbisogno di calorie", Food.targets(this)?.let { "${it.kcal} kcal al giorno" } ?: "Inserisci sesso, età, altezza e peso") { openCalculator() }
                 listRow(body, "🔔", "Promemoria attivi", Reminders.load(this).size.toString() + " (farmaci, visite, misure)") { ensureNotificationPermission(); toast("Le notifiche sono permesse se vedi i promemoria arrivare") }
                 listRow(body, "🛡", "Allergeni da evitare", Food.avoid(this).takeIf { it.isNotEmpty() }?.joinToString(", ") ?: "Li segnalo quando scansioni un prodotto") { avoidDialog { render() } }
                 sectionLabel(body, "I MIEI DATI")
-                listRow(body, "📥", "Importa da Web Launcher o da un file", "Diario, acqua, ricette, peso, farmaci, visite: niente si cancella, i dati si uniscono") { importData() }
+                listRow(body, "📥", "Importa da Web Launcher o da un file", "Diario, ricette, peso, farmaci, visite, allenamenti: niente si cancella, i dati si uniscono") { importData() }
                 listRow(body, "📤", "Esporta i miei dati", "Un file con tutto: per una copia o per cambiare telefono") {
                     shareFile("cibo-e-ricette.json", "application/json", Backup.export(this), "Esporta i dati")
                 }
@@ -264,7 +286,7 @@ class MainActivity : AppCompatActivity() {
                 val r = text?.let { Backup.import(this, it) }
                 runOnUiThread {
                     if (r == null) toast("Questo file non contiene dati di Cibo e ricette")
-                    else { MaterialAlertDialogBuilder(this).setTitle("✓ Dati importati").setMessage("${r.entries} cibi nel diario, ${r.recipes} ricette, ${r.days} giorni di acqua, ${r.measures} misure, ${r.meds} farmaci, ${r.visits} visite.").setPositiveButton("Ok", null).show(); refreshTop() }
+                    else { MaterialAlertDialogBuilder(this).setTitle("✓ Dati importati").setMessage("${r.entries} cibi nel diario, ${r.recipes} ricette, ${r.days} giorni di acqua, ${r.measures} misure, ${r.meds} farmaci, ${r.visits} visite, ${r.acts} allenamenti.").setPositiveButton("Ok", null).show(); refreshTop() }
                 }
             }
         }
@@ -295,7 +317,7 @@ class MainActivity : AppCompatActivity() {
         }
         i.getStringExtra("open")?.let { o ->
             i.removeExtra("open")
-            when (o) { "meds" -> openMeds(); "visits" -> openVisits(); "emergency" -> openEmergency(); "body" -> openBody() }
+            when (o) { "meds" -> openMeds(); "visits" -> openVisits(); "emergency" -> openEmergency(); "body" -> openBody(); "sleep" -> openSleep() }
             return
         }
         val action = i.getStringExtra("action") ?: return

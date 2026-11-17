@@ -141,23 +141,25 @@ object Backup {
         val avoid: List<String> = emptyList(),
         val sex: String = "", val birthYear: Int = 0, val heightCm: Double = 0.0, val activity: Double = 0.0, val goal: String = "", val weightKg: Double = 0.0,
         val recipes: List<Recipe> = emptyList(), val shopping: List<ShopItem> = emptyList(), val menu: Map<String, String> = emptyMap(),
-        val measures: List<Measure> = emptyList(), val meds: List<Med> = emptyList(), val visits: List<Visit> = emptyList(), val emergency: EmergencyCard? = null
+        val measures: List<Measure> = emptyList(), val meds: List<Med> = emptyList(), val visits: List<Visit> = emptyList(), val emergency: EmergencyCard? = null,
+        val plans: List<WorkoutPlan> = emptyList(), val acts: List<Act> = emptyList(), val weeklyGoal: Int = 0
     )
 
     fun export(c: Context): String {
         val p = Food.profile(c)
         return Gson().toJson(Data(1, Food.load(c), Food.waterDays(c), Food.waterGoal(c), Food.glass(c), Food.avoid(c).toList(),
             p.sex, p.birthYear, p.heightCm, p.activity, p.goal, p.weightKg, Recipes.load(c), Plan.shopping(c), Plan.menu(c),
-            Health.load(c), Meds.load(c), Visits.load(c), Emergency.load(c).takeIf { !Emergency.isEmpty(it) }))
+            Health.load(c), Meds.load(c), Visits.load(c), Emergency.load(c).takeIf { !Emergency.isEmpty(it) },
+            if (Fitness.hasCustomPlans(c)) Fitness.plans(c) else emptyList(), Fitness.acts(c), Fitness.weeklyGoal(c)))
     }
 
-    data class Result(val entries: Int, val recipes: Int, val days: Int, val measures: Int = 0, val meds: Int = 0, val visits: Int = 0)
+    data class Result(val entries: Int, val recipes: Int, val days: Int, val measures: Int = 0, val meds: Int = 0, val visits: Int = 0, val acts: Int = 0)
 
     /** Unisce i dati del file a quelli che ci sono già (niente si cancella). null se il file non è valido. */
     fun import(c: Context, json: String): Result? {
         val d = runCatching { Gson().fromJson(json, Data::class.java) }.getOrNull() ?: return null
         if (d.version < 1 || (d.entries.isEmpty() && d.recipes.isEmpty() && d.water.isEmpty() && d.birthYear == 0 && d.shopping.isEmpty() && d.menu.isEmpty() &&
-                d.measures.isEmpty() && d.meds.isEmpty() && d.visits.isEmpty() && d.emergency == null)) return null
+                d.measures.isEmpty() && d.meds.isEmpty() && d.visits.isEmpty() && d.emergency == null && d.plans.isEmpty() && d.acts.isEmpty())) return null
         val ids = Food.load(c).map { it.id }.toSet()
         val newEntries = d.entries.filter { it.id !in ids }
         Food.save(c, Food.load(c) + newEntries)
@@ -184,6 +186,12 @@ object Backup {
         val newVisits = d.visits.filter { it.id !in visitIds }
         newVisits.forEach { Visits.upsert(c, it.copy(reminderIds = emptyList())) }
         if (Emergency.isEmpty(Emergency.load(c)) && d.emergency != null) Emergency.save(c, d.emergency)
-        return Result(newEntries.size, newRecipes.size, days, newMeasures.size, newMeds.size, newVisits.size)
+        // allenamenti: schede e attività si uniscono; l'obiettivo della settimana solo se qui non c'è ancora niente
+        if (d.plans.isNotEmpty()) { val have = Fitness.plans(c).map { it.id }.toSet(); Fitness.savePlans(c, Fitness.plans(c) + d.plans.filter { it.id !in have }) }
+        val actIds = Fitness.acts(c).map { it.id }.toSet()
+        val newActs = d.acts.filter { it.id !in actIds }
+        if (d.weeklyGoal > 0 && Fitness.acts(c).isEmpty()) Fitness.setWeeklyGoal(c, d.weeklyGoal)
+        newActs.forEach { Fitness.addAct(c, it) }
+        return Result(newEntries.size, newRecipes.size, days, newMeasures.size, newMeds.size, newVisits.size, newActs.size)
     }
 }

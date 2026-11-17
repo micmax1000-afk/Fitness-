@@ -121,3 +121,59 @@ class HealthTest {
         assertTrue(old.measures.isEmpty()); assertNull(old.emergency)
     }
 }
+
+class TrainingTest {
+    private val day = 86_400_000L
+    private fun at(y: Int, m: Int, d: Int, h: Int = 12) = java.util.Calendar.getInstance().apply { set(y, m - 1, d, h, 0, 0); set(java.util.Calendar.MILLISECOND, 0) }.timeInMillis
+
+    @Test fun weekCountAndStreak() {
+        val now = at(2026, 11, 18)                       // mercoledì
+        val times = listOf(at(2026, 11, 16), at(2026, 11, 17), at(2026, 11, 10), at(2026, 11, 11), at(2026, 11, 12), at(2026, 11, 3))
+        assertEquals(2, Fitness.weekCount(times, now))
+        assertEquals(1, Fitness.streakWeeks(times, 3, now))     // la settimana scorsa ne ha 3, questa solo 2
+        assertEquals(2, Fitness.streakWeeks(times, 2, now))     // questa (2) + scorsa (3)
+        assertEquals(0, Fitness.streakWeeks(emptyList(), 3, now))
+        assertEquals(Fitness.weekIndex(at(2026, 11, 16)), Fitness.weekIndex(at(2026, 11, 22, 23)))   // lunedì e domenica: stessa settimana
+    }
+
+    @Test fun dedupeSameSession() {
+        val t = at(2026, 11, 18, 9)
+        assertEquals(1, Fitness.dedupe(listOf(t, t + 10 * 60_000L, t + 30 * 60_000L)).size)
+        assertEquals(2, Fitness.dedupe(listOf(t, t + 3 * 3_600_000L)).size)
+    }
+
+    @Test fun exercisesParseAndPrint() {
+        val l = Fitness.parseExercises("Squat 3x12 riposo 45\nPlank 3x30s riposo 30\nPanca 4x8 riposo 90 40kg\nbla bla")
+        assertEquals(3, l.size)
+        assertEquals(Ex("Squat", 3, 12, 45), l[0]); assertEquals(Ex("Plank", 3, 0, 30, 0.0, 30), l[1]); assertEquals(40.0, l[2].kg, 0.0)
+        assertEquals("Panca 4x8 riposo 90 40kg", Fitness.exerciseText(l[2])); assertEquals("Plank 3x30s riposo 30", Fitness.exerciseText(l[1]))
+        assertEquals(19, Fitness.planMinutes(Fitness.PRESETS[0]))
+    }
+
+    @Test fun tabataPhases() {
+        val p = Fitness.tabata(10, 20, 10, 8)
+        assertEquals(1 + 8 + 7, p.size); assertEquals("prepara", p.first().kind); assertEquals("lavoro", p.last().kind)
+        assertEquals(10 + 8 * 20 + 7 * 10, p.sumOf { it.seconds }); assertEquals("1:30", Fitness.clock(90))
+        assertEquals(3, Fitness.tabata(0, 20, 0, 3).size)
+    }
+
+    @Test fun sessionCalories() {
+        assertEquals(350.0, Fitness.kcalForSession(70.0, 60), 0.1); assertEquals(350.0, Fitness.kcalForSession(0.0, 60), 0.1)
+    }
+
+    @Test fun healthConnectHelpers() {
+        val days = listOf(Hc.Day("2026-11-16", steps = 4000, sleepMin = 420), Hc.Day("2026-11-17", steps = 0, sleepMin = 0), Hc.Day("2026-11-18", steps = 8000, sleepMin = 360))
+        assertEquals(6000.0, Hc.avg(days) { it.steps.toDouble() }, 0.1)
+        assertEquals("7 h 00 min", Hc.duration(420)); assertEquals("45 min", Hc.duration(45)); assertEquals("—", Hc.duration(0))
+        assertEquals(2, Hc.last(days, 2).size); assertEquals("2026-11-18", Hc.last(days, 2).last().date)
+        val s = Hc.Snapshot(0, days, emptyList())
+        assertEquals("2026-11-18", Hc.lastNight(s)?.date); assertEquals(8000L, Hc.today(s, java.time.LocalDate.of(2026, 11, 18))?.steps)
+    }
+
+    @Test fun backupWithTraining() {
+        val d = Backup.Data(1, plans = listOf(WorkoutPlan("p", "Mia", listOf(Ex("Squat", 3, 10, 45)))), acts = listOf(Act("a", "manual", "Corsa", 5, 30, 5000.0, 300.0)), weeklyGoal = 4,
+            measures = listOf(Measure("s", "sonno", 7.0, null, 3)))
+        assertEquals(d, Gson().fromJson(Gson().toJson(d), Backup.Data::class.java))
+        assertEquals("7 h", Health.fmt(Measure("s", "sonno", 7.0, null, 3)))
+    }
+}

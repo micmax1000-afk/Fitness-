@@ -38,7 +38,16 @@ case "$RM" in
   *) echo "::error::I promemoria o il referto non funzionano ($RM)"; adb logcat -d -s AndroidRuntime:E | tail -30; exit 1;;
 esac
 
-for a in body meds visits emergency report diary water calc recipes recipe cooking menu shopping settings web; do
+start --es action reminders
+for i in $(seq 1 15); do sleep 2; adb logcat -d -s CIBO_SELFTEST:* | grep -q 'TRAIN' && break; done
+TR=$(adb logcat -d -s CIBO_SELFTEST:* | grep -o 'TRAIN.*' | tail -1)
+echo "Allenamento: $TR"
+case "$TR" in
+  TRAIN\ settimana=[0-9]*\ tabata=235\ scheda=19) ;;
+  *) echo "::error::I conti dell'allenamento non tornano ($TR)"; exit 1;;
+esac
+
+for a in steps sleep train plans runplan tabata acts hc body meds visits emergency report diary water calc recipes recipe cooking menu shopping settings web; do
   start --es action $a
   shot "02-$a" 6
   alive || { echo "::error::L'app si e' chiusa nella schermata $a"; why; exit 1; }
