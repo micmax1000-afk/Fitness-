@@ -51,6 +51,16 @@ object Food {
     fun glass(c: Context) = prefs(c).getInt("glass", 250)
     fun setGlass(c: Context, ml: Int) = prefs(c).edit().putInt("glass", ml).apply()
 
+    // ----- promemoria per bere -----
+    val WATER_TIMES = listOf("10:00", "12:30", "15:00", "17:30", "20:00")
+    fun waterReminders(c: Context) = prefs(c).getBoolean("water_rem", false)
+    /** Accende (5 promemoria al giorno) o spegne i promemoria per bere. */
+    fun setWaterReminders(c: Context, on: Boolean) {
+        prefs(c).getString("water_rem_ids", "").orEmpty().split(',').mapNotNull { it.toIntOrNull() }.forEach { Reminders.remove(c, it) }
+        val ids = if (on) WATER_TIMES.map { Reminders.add(c, "💧 Bevi un bicchiere d'acqua", Meds.nextAt(it), "day", "water").id } else emptyList()
+        prefs(c).edit().putBoolean("water_rem", on).putString("water_rem_ids", ids.joinToString(",")).apply()
+    }
+
     // ----- allergeni da evitare e profilo -----
     fun avoid(c: Context): Set<String> = prefs(c).getStringSet("avoid", emptySet()).orEmpty()
     fun setAvoid(c: Context, s: Set<String>) = prefs(c).edit().putStringSet("avoid", s).apply()

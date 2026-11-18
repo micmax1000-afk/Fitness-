@@ -122,6 +122,10 @@ class HealthTest {
     }
 }
 
+class WaterTest {
+    @Test fun waterTimes() { assertEquals(5, Food.WATER_TIMES.size); assertEquals(5, Food.WATER_TIMES.map { Meds.parseTimes(it).single() }.distinct().size) }
+}
+
 class TrainingTest {
     private val day = 86_400_000L
     private fun at(y: Int, m: Int, d: Int, h: Int = 12) = java.util.Calendar.getInstance().apply { set(y, m - 1, d, h, 0, 0); set(java.util.Calendar.MILLISECOND, 0) }.timeInMillis
