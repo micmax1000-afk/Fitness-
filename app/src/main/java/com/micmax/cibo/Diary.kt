@@ -210,6 +210,11 @@ fun MainActivity.openWater() {
                 MaterialAlertDialogBuilder(this).setTitle("Obiettivo giornaliero").setView(form(et))
                     .setPositiveButton("Salva") { _, _ -> Food.setWaterGoal(this, (Calc.num(et.text.toString())?.toInt() ?: goal).coerceIn(500, 6000)); render() }.setNegativeButton("Annulla", null).show()
             }
+            val remOn = Food.waterReminders(this)
+            listRow(body, if (remOn) "🔔" else "🔕", if (remOn) "Promemoria attivi" else "Promemoria per bere", if (remOn) "Alle 10, 12:30, 15, 17:30 e 20: tocca per spegnerli" else "5 promemoria al giorno, dalle 10 alle 20") {
+                if (!remOn) ensureNotificationPermission()
+                Food.setWaterReminders(this, !remOn); toast(if (!remOn) "🔔 Promemoria per bere attivi" else "Promemoria spenti"); render()
+            }
             listRow(body, "🥛", "Dimensione del bicchiere", "$glass ml") {
                 val sizes = intArrayOf(150, 200, 250, 300, 330)
                 MaterialAlertDialogBuilder(this).setTitle("Bicchiere").setSingleChoiceItems(sizes.map { "$it ml" }.toTypedArray(), sizes.indexOf(glass).coerceAtLeast(2)) { dl, w -> Food.setGlass(this, sizes[w]); dl.dismiss(); render() }.show()

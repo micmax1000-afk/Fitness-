@@ -3,7 +3,7 @@
 App Android per il cibo, la cucina e la salute, senza AI: i dati restano sul telefono.
 
 - **Diario** del cibo (a mano, con codice a barre da Open Food Facts, o rimettendo un cibo mangiato di recente), calorie e macro del giorno
-- **Acqua** con obiettivo e bicchiere a scelta
+- **Acqua** con obiettivo, bicchiere a scelta e promemoria per bere (5 al giorno)
 - **Fabbisogno** di calorie (Mifflin-St Jeor), BMI, obiettivo dell'acqua
 - **Ricette**: scritte a mano, o salvate da Giallo Zafferano e da altri siti (la ricetta si legge dalla pagina, formato schema.org), con **modalità cucina** (passo per passo, schermo acceso, lettura a voce)
 - **Menu della settimana** e **lista della spesa** (dalle ricette e dal menu; si condivide con altre app o con Web Launcher)
@@ -31,5 +31,5 @@ Per aggiornamenti installabili sopra la versione precedente servono i secret
 ## Limiti
 
 - Niente foto del piatto né del frigo (servono l'AI): restano in Web Launcher.
-- Niente promemoria per bere (per ora). Niente GPS né fascia cardio nell'allenamento. I passi vengono da Health Connect (serve un orologio o un'app che li conta).
+Niente GPS né fascia cardio nell'allenamento. I passi vengono da Health Connect (serve un orologio o un'app che li conta).
 - I prodotti di Open Food Facts li inseriscono gli utenti: controlla sempre l'etichetta.

@@ -317,7 +317,7 @@ class MainActivity : AppCompatActivity() {
         }
         i.getStringExtra("open")?.let { o ->
             i.removeExtra("open")
-            when (o) { "meds" -> openMeds(); "visits" -> openVisits(); "emergency" -> openEmergency(); "body" -> openBody(); "sleep" -> openSleep() }
+            when (o) { "meds" -> openMeds(); "visits" -> openVisits(); "emergency" -> openEmergency(); "body" -> openBody(); "sleep" -> openSleep(); "water" -> openWater() }
             return
         }
         val action = i.getStringExtra("action") ?: return

@@ -37,6 +37,10 @@ object Selftest {
             val l = Reminders.load(a)
             val pdf = java.io.File(a.cacheDir, "prova-referto.pdf")
             writeReportPdf(reportData(a, System.currentTimeMillis() - 30 * 86_400_000L, System.currentTimeMillis()), pdf)
+            Food.setWaterReminders(a, true); val onN = Reminders.load(a).count { it.open == "water" }
+            Food.setWaterReminders(a, true); val onAgain = Reminders.load(a).count { it.open == "water" }
+            Food.setWaterReminders(a, false); val offN = Reminders.load(a).count { it.open == "water" }
+            Log.i(TAG, "ACQUA accesi=$onN ririaccesi=$onAgain spenti=$offN")
             val gp = Fitness.weekCount(Fitness.allTimes(a)); val st = Fitness.tabata(5, 20, 10, 8).sumOf { it.seconds }
             Log.i(TAG, "TRAIN settimana=$gp tabata=$st scheda=${Fitness.planMinutes(Fitness.PRESETS[0])}")
             Log.i(TAG, "REMINDERS count=${l.size} meds=${Meds.load(a).size} visite=${Visits.load(a).size} pdf=${pdf.length() > 500} peso=${Food.profile(a).weightKg}")

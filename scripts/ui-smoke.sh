@@ -47,6 +47,11 @@ case "$TR" in
   *) echo "::error::I conti dell'allenamento non tornano ($TR)"; exit 1;;
 esac
 
+for i in $(seq 1 10); do sleep 1; adb logcat -d -s CIBO_SELFTEST:* | grep -q 'ACQUA' && break; done
+AQ=$(adb logcat -d -s CIBO_SELFTEST:* | grep -o 'ACQUA.*' | tail -1)
+echo "Acqua: $AQ"
+[ "$AQ" = "ACQUA accesi=5 ririaccesi=5 spenti=0" ] || { echo "::error::I promemoria per bere non tornano ($AQ)"; exit 1; }
+
 for a in steps sleep train plans runplan tabata acts hc body meds visits emergency report diary water calc recipes recipe cooking menu shopping settings web; do
   start --es action $a
   shot "02-$a" 6
