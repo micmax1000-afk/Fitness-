@@ -16,8 +16,8 @@ App Android per il cibo, la cucina e la salute, senza AI: i dati restano sul tel
 - **Allenamento**: schede (serie, ripetizioni, riposo con cronometro, bip e voce), Tabata e intervalli, allenamenti inseriti a mano, obiettivo settimanale con serie di settimane
 - **Crea una scheda**: scegli stretching, mobilità, tutto il corpo, gambe, parte alta, addominali, cardio o schiena; durata e livello. L'app compone la scheda dal suo catalogo (riscaldamento, esercizi, allungamenti finali), sul telefono e senza internet; «Un'altra» la rifà diversa
 - **Esercizi con il disegno**: oltre 40 esercizi con l'omino animato che mostra il movimento e la spiegazione; il disegno compare anche durante la scheda
-- **Home «Oggi»** con calorie, acqua, passi, sonno, allenamenti della settimana e farmaci da prendere
-- **Tema** chiaro, scuro o come il telefono
+- **Home «Oggi»** con tre anelli (calorie, acqua, passi), sonno, allenamenti della settimana e farmaci da prendere
+- **Tema** chiaro, scuro o come il telefono; icone disegnate dall'app, uguali su tutti i telefoni
 - **Esporta / Importa**: un file con tutto. «Importa» legge anche i dati di Web Launcher (stessi nomi dei campi)
 
 ## Costruzione

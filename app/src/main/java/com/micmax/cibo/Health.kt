@@ -222,27 +222,62 @@ object Report {
     }
 }
 
-/** Un grafico a linee semplice (una o due serie). */
+/**
+ * Grafico a linea: area colorata sotto la linea, una fascia «sana» facoltativa ([bandLo]–[bandHi])
+ * e, toccando, il valore del punto più vicino con la sua data ([labels]).
+ */
 class LineChartView(context: Context) : android.view.View(context) {
     var series1: List<Double> = emptyList()
     var series2: List<Double>? = null
+    var labels: List<String> = emptyList()
+    var bandLo: Double? = null
+    var bandHi: Double? = null
+    var bandLabel = "fascia sana"
+    var unit = ""
     var color1 = 0xFF2EA66A.toInt()
     var color2 = 0xFF3B6CF5.toInt()
     var gridColor = 0x33888888
     var textColor = 0xFF888888.toInt()
     private val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+    private var sel = -1
+
+    init {
+        setOnTouchListener { v, e ->
+            if (series1.size < 2) return@setOnTouchListener false
+            val d = resources.displayMetrics.density; val pad = 34 * d; val w = width - pad - 8 * d
+            sel = Math.round((e.x - pad) / w * (series1.size - 1)).coerceIn(0, series1.size - 1)
+            if (e.action == android.view.MotionEvent.ACTION_DOWN) v.parent?.requestDisallowInterceptTouchEvent(true)
+            invalidate(); true
+        }
+    }
+
+    private fun fmt(v: Double) = if (v >= 100) v.toInt().toString() else String.format(Locale.ITALIAN, "%.1f", v)
 
     override fun onDraw(canvas: android.graphics.Canvas) {
         super.onDraw(canvas)
-        val all = series1 + (series2 ?: emptyList())
         if (series1.size < 2) return
+        val all = series1 + (series2 ?: emptyList())
         val d = resources.displayMetrics.density
         val pad = 34 * d
         var min = all.minOrNull()!!; var max = all.maxOrNull()!!
+        // la fascia sana si vede se è vicina ai valori (non schiaccia il grafico)
+        val lo = bandLo; val hi = bandHi
+        if (lo != null && hi != null && hi > lo) { val r = (max - min).coerceAtLeast(1.0); if (lo > min - 3 * r && hi < max + 3 * r) { min = minOf(min, lo); max = maxOf(max, hi) } }
         if (max - min < 1e-6) { min -= 1; max += 1 }
         val range = max - min
         min -= range * 0.1; max += range * 0.1
         val w = width - pad - 8 * d; val h = height - 16 * d
+        fun yOf(v: Double) = (8 * d + h * (1 - (v - min) / (max - min))).toFloat()
+        fun xOf(i: Int, n: Int) = pad + w * i / (n - 1)
+        if (lo != null && hi != null && hi > lo) {
+            val top = yOf(hi).coerceIn(8 * d, 8 * d + h); val bot = yOf(lo).coerceIn(8 * d, 8 * d + h)
+            if (bot > top) {
+                p.style = android.graphics.Paint.Style.FILL; p.color = (color1 and 0x00FFFFFF) or 0x1A000000
+                canvas.drawRect(pad, top, pad + w, bot, p)
+                p.color = textColor; p.textSize = 10 * d; p.textAlign = android.graphics.Paint.Align.RIGHT
+                canvas.drawText(bandLabel, pad + w - 4 * d, top + 12 * d, p); p.textAlign = android.graphics.Paint.Align.LEFT
+            }
+        }
         p.style = android.graphics.Paint.Style.STROKE; p.strokeWidth = d; p.color = gridColor
         p.textSize = 10 * d
         for (i in 0..3) {
@@ -250,21 +285,36 @@ class LineChartView(context: Context) : android.view.View(context) {
             canvas.drawLine(pad, y, pad + w, y, p)
             val v = max - (max - min) * i / 3
             p.style = android.graphics.Paint.Style.FILL; p.color = textColor
-            canvas.drawText(if (v >= 100) v.toInt().toString() else String.format(Locale.ITALIAN, "%.1f", v), 0f, y + 4 * d, p)
+            canvas.drawText(fmt(v), 0f, y + 4 * d, p)
             p.style = android.graphics.Paint.Style.STROKE; p.color = gridColor
         }
-        fun draw(s: List<Double>, col: Int) {
-            p.color = col; p.strokeWidth = 2.5f * d; p.style = android.graphics.Paint.Style.STROKE
+        fun draw(s: List<Double>, col: Int, area: Boolean) {
             val path = android.graphics.Path()
-            s.forEachIndexed { i, v ->
-                val x = pad + w * i / (s.size - 1); val y = (8 * d + h * (1 - (v - min) / (max - min))).toFloat()
-                if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            s.forEachIndexed { i, v -> val x = xOf(i, s.size); val y = yOf(v); if (i == 0) path.moveTo(x, y) else path.lineTo(x, y) }
+            if (area) {
+                val fill = android.graphics.Path(path); fill.lineTo(xOf(s.size - 1, s.size), 8 * d + h); fill.lineTo(pad, 8 * d + h); fill.close()
+                p.style = android.graphics.Paint.Style.FILL
+                p.shader = android.graphics.LinearGradient(0f, 8 * d, 0f, 8 * d + h, (col and 0x00FFFFFF) or 0x55000000, col and 0x00FFFFFF, android.graphics.Shader.TileMode.CLAMP)
+                canvas.drawPath(fill, p); p.shader = null
             }
+            p.color = col; p.strokeWidth = 2.5f * d; p.style = android.graphics.Paint.Style.STROKE; p.strokeJoin = android.graphics.Paint.Join.ROUND
             canvas.drawPath(path, p)
             p.style = android.graphics.Paint.Style.FILL
-            s.forEachIndexed { i, v -> canvas.drawCircle(pad + w * i / (s.size - 1), (8 * d + h * (1 - (v - min) / (max - min))).toFloat(), 3 * d, p) }
+            s.forEachIndexed { i, v -> canvas.drawCircle(xOf(i, s.size), yOf(v), 3 * d, p) }
         }
-        draw(series1, color1)
-        series2?.takeIf { it.size >= 2 }?.let { draw(it, color2) }
+        draw(series1, color1, series2 == null)
+        series2?.takeIf { it.size >= 2 }?.let { draw(it, color2, false) }
+        // il punto toccato: riga, cerchio e fumetto con valore e data
+        val i = sel.takeIf { it in series1.indices } ?: return
+        val x = xOf(i, series1.size); val y = yOf(series1[i])
+        p.style = android.graphics.Paint.Style.STROKE; p.color = textColor; p.strokeWidth = d
+        canvas.drawLine(x, 8 * d, x, 8 * d + h, p)
+        p.style = android.graphics.Paint.Style.FILL; p.color = color1; canvas.drawCircle(x, y, 6 * d, p)
+        val txt = fmt(series1[i]) + (series2?.getOrNull(i)?.let { "/" + fmt(it) } ?: "") + (if (unit.isNotBlank()) " $unit" else "") + (labels.getOrNull(i)?.let { " · $it" } ?: "")
+        p.textSize = 12 * d; p.typeface = android.graphics.Typeface.DEFAULT_BOLD
+        val tw = p.measureText(txt) + 16 * d
+        val bx = (x - tw / 2).coerceIn(pad, (pad + w - tw).coerceAtLeast(pad)); val by = (y - 34 * d).let { if (it < 2 * d) y + 12 * d else it }
+        p.color = 0xEE1D2A44.toInt(); canvas.drawRoundRect(bx, by, bx + tw, by + 22 * d, 11 * d, 11 * d, p)
+        p.color = android.graphics.Color.WHITE; canvas.drawText(txt, bx + 8 * d, by + 15.5f * d, p); p.typeface = android.graphics.Typeface.DEFAULT
     }
 }

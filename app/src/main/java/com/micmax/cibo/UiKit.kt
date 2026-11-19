@@ -37,9 +37,10 @@ fun Context.listRow(parent: LinearLayout, icon: String, title: String, sub: Stri
         isClickable = true; setOnClickListener { onClick() }
         if (onLong != null) setOnLongClickListener { onLong(); true }
     }
-    r.addView(TextView(this).apply {
-        text = icon; textSize = 21f; gravity = Gravity.CENTER; background = roundBg(col(R.color.icbg), 12)
-        layoutParams = LinearLayout.LayoutParams(dp(42), dp(42)).apply { marginEnd = dp(12) }
+    // l'icona c'è sempre come primo elemento (alcune schermate la nascondono); se manca resta invisibile
+    r.addView(iconBox(icon.ifBlank { " " }, 42).apply {
+        (layoutParams as LinearLayout.LayoutParams).marginEnd = dp(12)
+        if (icon.isBlank()) visibility = View.GONE
     })
     val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(0, -2, 1f) }
     col.addView(TextView(this).apply { text = title; textSize = 15.5f; setTextColor(col(R.color.text)); setTypeface(typeface, android.graphics.Typeface.BOLD); maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END })
@@ -58,10 +59,10 @@ fun Context.bigButton(emoji: String, label: String, primary: Boolean, onClick: (
     orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
     background = roundBg(if (primary) col(R.color.accent) else col(R.color.card), 18, if (primary) null else col(R.color.stroke))
     setPadding(dp(8), dp(16), dp(8), dp(16)); isClickable = true; setOnClickListener { onClick() }
-    addView(TextView(this@bigButton).apply { text = emoji; textSize = 28f; gravity = Gravity.CENTER })
+    addView(iconBox(emoji, 44, onAccent = primary).apply { (layoutParams as LinearLayout.LayoutParams).gravity = Gravity.CENTER_HORIZONTAL })
     addView(TextView(this@bigButton).apply {
         text = label; textSize = 14.5f; gravity = Gravity.CENTER; setTypeface(typeface, android.graphics.Typeface.BOLD)
-        setTextColor(if (primary) android.graphics.Color.WHITE else col(R.color.text))
+        setTextColor(if (primary) col(R.color.onaccent) else col(R.color.text))
     })
 }
 
@@ -80,7 +81,7 @@ fun Context.chipBar(chips: List<Pair<String, () -> Unit>>): View {
 }
 
 fun Context.primaryButton(text: String, onClick: () -> Unit) = TextView(this).apply {
-    this.text = text; textSize = 16f; gravity = Gravity.CENTER; setTextColor(android.graphics.Color.WHITE); setTypeface(typeface, android.graphics.Typeface.BOLD)
+    this.text = text; textSize = 16f; gravity = Gravity.CENTER; setTextColor(col(R.color.onaccent)); setTypeface(typeface, android.graphics.Typeface.BOLD)
     background = roundBg(col(R.color.accent), 16); setPadding(dp(12), dp(14), dp(12), dp(14))
     layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) }
     isClickable = true; setOnClickListener { onClick() }
@@ -120,12 +121,13 @@ fun Context.statRow(vararg tiles: Triple<String, String, String?>): View = Linea
     }
 }
 
-fun Context.progressBar(frac: Double, color: Int): View = android.widget.FrameLayout(this).apply {
-    background = roundBg(col(R.color.stroke), 6)
+/** Una barra che si riempie; il fondo è chiaro, così una barra vuota non sembra piena. */
+fun Context.progressBar(frac: Double, color: Int, heightDp: Int = 10): View = android.widget.FrameLayout(this).apply {
+    background = roundBg(col(R.color.track), 6)
     val f = frac.coerceIn(0.0, 1.0)
     addView(View(this@progressBar).apply { background = roundBg(color, 6) }, android.widget.FrameLayout.LayoutParams(0, -1).also { it.width = 1 })
     post { (getChildAt(0).layoutParams as android.widget.FrameLayout.LayoutParams).width = (width * f).toInt().coerceAtLeast(if (f > 0) dp(6) else 0); getChildAt(0).requestLayout() }
-    layoutParams = LinearLayout.LayoutParams(-1, dp(10)).apply { setMargins(dp(4), dp(6), dp(4), dp(6)) }
+    layoutParams = LinearLayout.LayoutParams(-1, dp(heightDp)).apply { setMargins(dp(4), dp(6), dp(4), dp(6)) }
 }
 
 /** Una foto da internet (si scarica da sola e resta in memoria). */

@@ -33,7 +33,7 @@ fun MainActivity.openRecipes() {
             }
             listRow(body, "🌐", "Salva da un altro sito", "Apri la pagina di una ricetta e tocca «Salva ricetta»") { openRecipeWeb("https://www.google.com/search?q=" + java.net.URLEncoder.encode("ricetta", "UTF-8")) }
             listRow(body, "✏️", "Scrivila tu", "Titolo, ingredienti e passaggi") { editRecipe(null) }
-            if (list.isEmpty()) { hintLabel(body, "Ancora nessuna ricetta. Quelle di Web Launcher si portano qui da ⚙️ → «Importa da Web Launcher»."); return }
+            if (list.isEmpty()) { emptyState(body, "🍳", "Ancora nessuna ricetta", "Salvale da Giallo Zafferano o da altri siti, oppure scrivile tu (in alto). Quelle di Web Launcher si portano qui dalle impostazioni → «Importa»."); return }
             sectionLabel(body, "LE MIE RICETTE · ${list.size}")
             list.forEach { r ->
                 listRow(body, "🍳", r.title, listOf(r.time, r.servings.takeIf { it.isNotBlank() }?.let { "$it porzioni" }).filterNotNull().filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "${r.ingredients.size} ingredienti" },

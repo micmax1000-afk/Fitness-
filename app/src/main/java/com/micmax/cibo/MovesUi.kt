@@ -127,7 +127,7 @@ fun MainActivity.openGenerator(start: Moves.Goal? = null) {
             items.forEachIndexed { i, t ->
                 row.addView(TextView(this).apply {
                     text = t; textSize = 13.5f; gravity = Gravity.CENTER; setPadding(dp(12), dp(9), dp(12), dp(9))
-                    setTextColor(if (i == sel) android.graphics.Color.WHITE else col(R.color.text))
+                    setTextColor(if (i == sel) col(R.color.onaccent) else col(R.color.text))
                     background = roundBg(if (i == sel) col(R.color.accent) else col(R.color.card), 18, if (i == sel) null else col(R.color.stroke))
                     layoutParams = LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(6) }
                     setOnClickListener { onPick(i) }

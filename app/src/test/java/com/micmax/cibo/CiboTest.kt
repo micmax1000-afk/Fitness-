@@ -213,4 +213,17 @@ class TrainingTest {
         }
         assertEquals(Moves.generate(Moves.Goal.CORE, 20, 1, 5L).exercises, Moves.generate(Moves.Goal.CORE, 20, 1, 5L).exercises)
     }
+
+    @Test fun icons() {
+        val need = mapOf('M' to 2, 'L' to 2, 'H' to 1, 'V' to 1, 'C' to 6, 'Q' to 4, 'Z' to 0, 'O' to 3, 'R' to 5)
+        Icons.PATHS.forEach { (k, d) ->
+            val cmds = Icons.commands(d)
+            assertTrue(k, cmds.isNotEmpty() && cmds[0].first.uppercaseChar() in setOf('M', 'O', 'R'))
+            cmds.forEach { (c, n) -> val m = need[c.uppercaseChar()]!!; assertTrue("$k $c ${n.size}", if (m == 0) n.isEmpty() else n.size % m == 0 && n.isNotEmpty()) }
+            // tutto dentro la griglia 24×24
+            cmds.filter { it.first.isUpperCase() && it.first !in setOf('O', 'R') }.forEach { (_, n) -> n.forEach { v -> assertTrue("$k $v", v in -0.5f..24.5f) } }
+        }
+        assertTrue(Icons.has("⚖️")); assertTrue(Icons.has("🏋️")); assertTrue(Icons.has("🏋️\u200D♀️")); assertTrue(Icons.has("2️⃣"))
+        assertEquals("2", Icons.digit("2️⃣")); assertFalse(Icons.has("🫁"))
+    }
 }
