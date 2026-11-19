@@ -180,4 +180,63 @@ class TrainingTest {
         assertEquals(d, Gson().fromJson(Gson().toJson(d), Backup.Data::class.java))
         assertEquals("7 h", Health.fmt(Measure("s", "sonno", 7.0, null, 3)))
     }
+
+    @Test fun movesCatalogue() {
+        assertEquals("plank-laterale", Moves.find("Plank laterale (per lato)")?.id)
+        assertEquals("plank", Moves.find("Plank")?.id)
+        assertEquals("squat-profondo", Moves.find("Squat profondo tenuto")?.id)
+        assertEquals("flessori", Moves.find("Allungamento dei fianchi")?.id)
+        assertEquals("gatto", Moves.find("GATTO-CAMMELLO")?.id)
+        assertNull(Moves.find("Panca piana"))
+        Fitness.PRESETS.flatMap { it.exercises }.forEach { assertNotNull(it.name, Moves.find(it.name)) }
+        assertEquals(Moves.ALL.size, Moves.ALL.map { it.id }.toSet().size)
+        // ogni disegno resta dentro il riquadro e tocca il pavimento
+        Moves.ALL.forEach { m ->
+            for (k in 0 until m.frames.size * 6) {
+                val o = Moves.figure(m, k / 6f)
+                for (i in 0 until Moves.SPINE) {
+                    assertTrue("${m.id} x", o[i * 2] in -1f..101f); assertTrue("${m.id} y", o[i * 2 + 1] in -1f..(Moves.FLOOR + 0.01f))
+                }
+            }
+        }
+    }
+
+    @Test fun generatedPlans() {
+        for (g in Moves.Goal.values()) for (lv in 0..2) for (min in listOf(5, 10, 20, 45)) {
+            val p = Moves.generate(g, min, lv, 7L)
+            assertTrue("$g $lv $min vuota", p.exercises.isNotEmpty())
+            assertTrue("$g $lv $min: ${Fitness.planMinutes(p)} min", Fitness.planMinutes(p) in (min * 3 / 4)..(min + 6))
+            p.exercises.forEach { e -> assertNotNull(e.name, Moves.find(e.name)); assertTrue(e.sets > 0); assertTrue(e.reps > 0 || e.seconds > 0) }
+            // la scheda si può riscrivere e rileggere come quelle fatte a mano
+            assertEquals(p.exercises, Fitness.parseExercises(p.exercises.joinToString("\n") { Fitness.exerciseText(it) }))
+            if (lv == 0) assertTrue(p.exercises.none { "jump" in (Moves.find(it.name)?.tags ?: emptySet()) })
+        }
+        assertEquals(Moves.generate(Moves.Goal.CORE, 20, 1, 5L).exercises, Moves.generate(Moves.Goal.CORE, 20, 1, 5L).exercises)
+    }
+
+    @Test fun icons() {
+        val need = mapOf('M' to 2, 'L' to 2, 'H' to 1, 'V' to 1, 'C' to 6, 'Q' to 4, 'Z' to 0, 'O' to 3, 'R' to 5)
+        Icons.PATHS.forEach { (k, d) ->
+            val cmds = Icons.commands(d)
+            assertTrue(k, cmds.isNotEmpty() && cmds[0].first.uppercaseChar() in setOf('M', 'O', 'R'))
+            cmds.forEach { (c, n) -> val m = need[c.uppercaseChar()]!!; assertTrue("$k $c ${n.size}", if (m == 0) n.isEmpty() else n.size % m == 0 && n.isNotEmpty()) }
+            // tutto dentro la griglia 24×24
+            cmds.filter { it.first.isUpperCase() && it.first !in setOf('O', 'R') }.forEach { (_, n) -> n.forEach { v -> assertTrue("$k $v", v in -0.5f..24.5f) } }
+        }
+        assertTrue(Icons.has("⚖️")); assertTrue(Icons.has("🏋️")); assertTrue(Icons.has("🏋️\u200D♀️")); assertTrue(Icons.has("2️⃣"))
+        assertEquals("2", Icons.digit("2️⃣")); assertFalse(Icons.has("🫁"))
+    }
+
+    @Test fun autoCount() {
+        val squat = Moves.find("Squat"); val jj = Moves.find("Jumping jack")
+        assertEquals(3.0, Moves.repSeconds(squat), 0.001)
+        assertTrue(Moves.repSeconds(jj) < Moves.repSeconds(squat))
+        assertEquals(1.5, Moves.repSeconds(squat, 0.5), 0.001); assertEquals(6.0, Moves.repSeconds(squat, 2.0), 0.001)
+        assertEquals(6.0, Moves.repSeconds(squat, 9.0), 0.001)          // oltre il massimo resta al massimo
+        assertEquals(0 to 5, Moves.autoState(0, 12, 3000))               // pronti
+        assertEquals(0 to 1, Moves.autoState(4500, 12, 3000))            // … 1
+        assertEquals(0 to 0, Moves.autoState(5000, 12, 3000))            // via
+        assertEquals(2 to 0, Moves.autoState(5000 + 6500, 12, 3000))     // due ripetizioni fatte
+        assertEquals(12 to 0, Moves.autoState(999_999, 12, 3000))        // mai più di quelle della serie
+    }
 }

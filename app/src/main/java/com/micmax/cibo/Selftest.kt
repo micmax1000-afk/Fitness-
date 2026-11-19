@@ -79,6 +79,8 @@ object Selftest {
                 "plans" -> a.openPlans()
                 "runplan" -> a.runPlan(Fitness.PRESETS[2])
                 "tabata" -> a.openTabata()
+                "generator" -> a.openGenerator(Moves.Goal.STRETCH)
+                "moves" -> a.openMoves()
                 "acts" -> a.openActs()
                 "hc" -> a.openHcConnect()
                 else -> {}

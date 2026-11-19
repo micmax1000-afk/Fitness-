@@ -106,8 +106,7 @@ fun MainActivity.openSteps() {
             val days = Hc.last(snap?.days.orEmpty(), 7)
             val today = Hc.today(snap)
             if (snap == null || days.none { it.steps > 0 }) {
-                hintLabel(body, "Nessun dato sui passi.\nSe hai un orologio o un'app che li conta, collega Health Connect e li vedi qui da soli.")
-                listRow(body, "⌚", "Orologio e passi", "Collega Health Connect") { openHcConnect() }
+                emptyState(body, "👟", "Ancora nessun passo", "Se hai un orologio o un'app che conta i passi, collegala tramite Health Connect: i passi arrivano qui da soli.", "Collega l'orologio") { openHcConnect() }
                 return
             }
             val steps = today?.steps ?: 0L
@@ -162,7 +161,7 @@ fun MainActivity.openSleep() {
             val nights = snap?.days?.filter { it.sleepMin > 0 }.orEmpty().takeLast(14)
             val manual = Health.load(this).filter { it.type == "sonno" }.sortedBy { it.time }
             val hours = if (nights.isNotEmpty()) nights.map { it.sleepMin / 60.0 } else manual.takeLast(14).map { it.v1 }
-            if (hours.isEmpty()) hintLabel(body, "Nessun dato sul sonno.\nSe colleghi l'orologio (Orologio e passi) lo vedi qui da solo; altrimenti usa «Aggiungi» in alto.")
+            if (hours.isEmpty()) emptyState(body, "😴", "Ancora nessuna notte", "Collega l'orologio e il sonno arriva da solo, con le fasi. Oppure scrivi le ore con «Aggiungi» in alto.", "Collega l'orologio") { openHcConnect() }
             else {
                 val avg = hours.average()
                 body.addView(statRow(
@@ -170,7 +169,7 @@ fun MainActivity.openSleep() {
                     Triple("Ultima notte", Hc.duration((hours.last() * 60).toLong()), null),
                     Triple("Migliore", Hc.duration((hours.max() * 60).toLong()), null)))
                 if (hours.size >= 2) body.addView(LineChartView(this).apply {
-                    series1 = hours; color1 = 0xFF6366F1.toInt(); gridColor = col(R.color.stroke); textColor = col(R.color.muted)
+                    series1 = hours; color1 = 0xFF8B8CF6.toInt(); gridColor = col(R.color.stroke); textColor = col(R.color.muted)
                     layoutParams = LinearLayout.LayoutParams(-1, dp(160)).apply { setMargins(dp(6), dp(6), dp(6), dp(6)) }
                 })
                 hintLabel(body, "Per gli adulti si consigliano 7–9 ore a notte.")
@@ -226,7 +225,9 @@ fun MainActivity.openTrain() {
                 textSize = 14f; gravity = Gravity.CENTER; setTextColor(col(R.color.muted))
             })
             sectionLabel(body, "ALLENATI")
+            listRow(body, "✨", "Crea una scheda", "Stretching, mobilità, gambe, addominali, cardio…: scegli tempo e livello") { openGenerator() }
             listRow(body, "🏋️", "Schede", "Serie, ripetizioni, riposo con cronometro e voce") { openPlans() }
+            listRow(body, "📖", "Esercizi", "Come si fanno, con il disegno animato") { openMoves() }
             listRow(body, "⏱", "Tabata e intervalli", "Lavoro e riposo a tempo, con bip e voce") { openTabata() }
             listRow(body, "📝", "Ho fatto un allenamento", "Aggiungilo a mano: corsa, nuoto, palestra…") { addActDialog { render() } }
             sectionLabel(body, "STORICO")
@@ -265,7 +266,7 @@ fun MainActivity.openActs() {
             val acts = Fitness.acts(this)
             val watch = Hc.cached(this)?.exercises.orEmpty()
             val f = SimpleDateFormat("EEE d MMM, HH:mm", Locale.ITALIAN)
-            if (acts.isEmpty() && watch.isEmpty()) { hintLabel(body, "Ancora nessun allenamento. Fai una scheda, un Tabata, oppure tocca «Aggiungi»."); return }
+            if (acts.isEmpty() && watch.isEmpty()) { emptyState(body, "🏅", "Ancora nessun allenamento", "Fai una scheda o un Tabata: si registrano da soli. Per corsa, nuoto o palestra tocca «Aggiungi».", "Crea una scheda") { openGenerator() }; return }
             if (acts.isNotEmpty()) sectionLabel(body, "REGISTRATI QUI · ${acts.size}")
             acts.take(40).forEach { a ->
                 listRow(body, "🏅", a.title, f.format(Date(a.start)).replaceFirstChar { it.uppercase() } + " · ${a.durationMin} min" + (if (a.distanceM > 0) " · %.1f km".format(Locale.ITALIAN, a.distanceM / 1000) else "") + (if (a.kcal > 0) " · ~${a.kcal.toInt()} kcal" else ""),
@@ -290,6 +291,7 @@ fun MainActivity.openPlans() {
             Fitness.plans(this).forEach { p ->
                 listRow(body, "🏋️", p.name, "${p.exercises.size} esercizi · circa ${Fitness.planMinutes(p)} min", onLong = { editPlan(p) { render() } }) { runPlan(p) }
             }
+            listRow(body, "✨", "Crea una scheda nuova", "L'app la compone per te: scegli tipo, tempo e livello") { openGenerator() }
             hintLabel(body, "Tocca una scheda per iniziare. Tieni premuto per modificarla o eliminarla. Il riposo ha il cronometro, con bip e voce.")
         }
         scr.refresh = { render() }
@@ -323,6 +325,7 @@ fun MainActivity.runPlan(plan: WorkoutPlan) {
     var timer: CountDownTimer? = null
     val tone = beepTone()
     var voice = Fitness.voice(this)
+    var auto = Fitness.auto(this); var tempo = Fitness.tempo(this)
     val started = System.currentTimeMillis()
     var finished = false
     fun beep(long: Boolean = false) { runCatching { tone?.startTone(ToneGenerator.TONE_PROP_BEEP, if (long) 500 else 150) } }
@@ -334,8 +337,20 @@ fun MainActivity.runPlan(plan: WorkoutPlan) {
             this.text = text; textSize = size; setTypeface(typeface, android.graphics.Typeface.BOLD); gravity = Gravity.CENTER; setTextColor(color); setPadding(dp(8), dp(8), dp(8), dp(4))
         }
         fun note(t: String) = TextView(this).apply { text = t; textSize = 15f; gravity = Gravity.CENTER; setTextColor(col(R.color.muted)); setPadding(8, 8, 8, 16) }
-        fun btn(label: String, onClick: () -> Unit) = MaterialButton(this).apply {
-            text = label; isAllCaps = false; textSize = 17f; layoutParams = LinearLayout.LayoutParams(-1, dp(60)).apply { setMargins(dp(12), dp(6), dp(12), dp(6)) }; setOnClickListener { onClick() }
+        /** [secondary]: pulsante chiaro e bordato, più basso, per le cose da non toccare per sbaglio. */
+        fun btn(label: String, secondary: Boolean = false, onClick: () -> Unit) =
+            (if (secondary) MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle) else MaterialButton(this)).apply {
+                text = label; isAllCaps = false; textSize = if (secondary) 15f else 17f
+                layoutParams = LinearLayout.LayoutParams(-1, dp(if (secondary) 50 else 60)).apply { setMargins(dp(12), dp(if (secondary) 10 else 6), dp(12), dp(6)) }
+                if (secondary) setTextColor(col(R.color.muted))
+                setOnClickListener { onClick() }
+            }
+        /** A che punto sei: serie fatte su tutte le serie della scheda. */
+        fun progressHeader() {
+            val total = plan.exercises.sumOf { it.sets }.coerceAtLeast(1)
+            val done = plan.exercises.take(exI).sumOf { it.sets } + setI
+            body.addView(progressBar(done.toDouble() / total, col(R.color.accent), 6))
+            body.addView(TextView(this).apply { text = "${(done * 100 / total)}% della scheda"; textSize = 12f; setTextColor(col(R.color.muted)); gravity = Gravity.END; setPadding(0, 0, dp(6), 0) })
         }
         fun voiceBtn() = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
             isAllCaps = false; textSize = 13f
@@ -354,15 +369,25 @@ fun MainActivity.runPlan(plan: WorkoutPlan) {
             body.removeAllViews()
             val e = plan.exercises.getOrNull(exI)
             val upNext = if (setI + 1 < (e?.sets ?: 0)) "${e!!.name}, serie ${setI + 2} di ${e.sets}" else plan.exercises.getOrNull(exI + 1)?.name?.let { "Prossimo: $it" } ?: "Ultimo esercizio completato"
-            val t = big("$sec", 72f, 0xFF2563EB.toInt())
-            body.addView(big("Riposo", 22f, col(R.color.muted))); body.addView(t); body.addView(note(upNext))
-            body.addView(btn("Salta il riposo") { nextSet() }); body.addView(voiceBtn())
+            progressHeader()
+            body.addView(big("Riposo", 22f, col(R.color.muted)))
+            // conto alla rovescia dentro un anello che si svuota
+            val ring = RingView(this).apply { progress = 1.0; color = 0xFF38BDF8.toInt(); thicknessDp = 12f }
+            val t = big("$sec", 64f, col(R.color.text)).apply { setPadding(0, 0, 0, 0) }
+            body.addView(android.widget.FrameLayout(this).apply {
+                addView(ring, android.widget.FrameLayout.LayoutParams(-1, -1))
+                addView(t, android.widget.FrameLayout.LayoutParams(-1, -1).apply { gravity = Gravity.CENTER }); t.gravity = Gravity.CENTER
+            }, LinearLayout.LayoutParams(dp(190), dp(190)).apply { gravity = Gravity.CENTER_HORIZONTAL; setMargins(0, dp(6), 0, dp(6)) })
+            body.addView(note(upNext))
+            val nextEx = if (setI + 1 < (e?.sets ?: 0)) e else plan.exercises.getOrNull(exI + 1)
+            Moves.find(nextEx?.name ?: "")?.let { m -> body.addView(moveView(m, 120).apply { setOnClickListener { showMove(m) } }) }
+            body.addView(btn("Salta il riposo", secondary = true) { nextSet() }); body.addView(voiceBtn())
             say("Riposo. $sec secondi. $upNext.")
             timer = object : CountDownTimer(sec * 1000L, 250) {
                 override fun onTick(ms: Long) {
                     val left = (ms + 999) / 1000
                     if (left != t.tag) { t.tag = left; if (left in 1..3) { if (voice) say("$left") else beep() } }
-                    t.text = left.toString()
+                    t.text = left.toString(); ring.progress = ms / (sec * 1000.0)
                 }
                 override fun onFinish() { beep(true); say("Via!"); nextSet() }
             }.start()
@@ -375,18 +400,97 @@ fun MainActivity.runPlan(plan: WorkoutPlan) {
                 val min = ((System.currentTimeMillis() - started) / 60000).toInt().coerceAtLeast(1)
                 val kcal = Fitness.kcalForSession(Food.profile(this).weightKg, min)
                 Fitness.addAct(this, Act(UUID.randomUUID().toString(), "plan", "🏋️ ${plan.name}", started, min, 0.0, kcal))
-                body.addView(big("🎉", 64f)); body.addView(big("Scheda completata!", 24f))
+                body.addView(iconBox("🏅", 110).apply { (layoutParams as LinearLayout.LayoutParams).apply { gravity = Gravity.CENTER_HORIZONTAL; topMargin = dp(28) } })
+                body.addView(big("Scheda completata!", 26f)); body.addView(note("Ottimo lavoro: registrato negli allenamenti della settimana."))
+                confetti()
                 body.addView(statRow(Triple("Durata", "$min min", null), Triple("Calorie", "~${kcal.toInt()}", "stima")))
                 body.addView(btn("Chiudi") { pop() })
                 beep(true); say("Scheda completata. Bravo! $min minuti.")
             } else {
+                progressHeader()
                 body.addView(big("Esercizio ${exI + 1} di ${plan.exercises.size}", 14f, col(R.color.muted)))
                 body.addView(big(e.name, 26f))
+                val move = Moves.find(e.name)
+                val repMs = (Moves.repSeconds(move, tempo) * 1000).toLong()
+                val mv = move?.let { m -> moveView(m, 170).apply { setOnClickListener { showMove(m) }; if (auto && e.seconds == 0) frameMs = repMs / 2f } }
+                mv?.let { body.addView(it) }
                 body.addView(big("Serie ${setI + 1} di ${e.sets}", 18f, col(R.color.muted)))
                 if (e.kg > 0) body.addView(big("${if (e.kg % 1.0 == 0.0) e.kg.toInt() else e.kg} kg", 16f, col(R.color.muted)))
                 say("${e.name}. Serie ${setI + 1} di ${e.sets}. " + if (e.seconds > 0) "${e.seconds} secondi." else "${e.reps} ripetizioni.")
-                if (e.seconds > 0) {
-                    val t = big("${e.seconds}", 80f, 0xFF16A34A.toInt()); body.addView(t)
+                // il modo (automatico o a mano) e il ritmo si cambiano qui, anche a metà scheda
+                fun modeRow() = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; setPadding(0, dp(10), 0, 0)
+                    fun chip(t: String, f: () -> Unit) = addView(MaterialButton(this@runPlan, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                        text = t; isAllCaps = false; textSize = 13f; setOnClickListener { f() }
+                    }, LinearLayout.LayoutParams(-2, -2).apply { setMargins(dp(4), 0, dp(4), 0) })
+                    chip(if (auto) "🔁 Conto automatico" else "👆 Conto a mano") {
+                        auto = !auto; Fitness.setAuto(this@runPlan, auto); timer?.cancel(); stopSpeaking(); reps = 0; render()
+                        toast(if (auto) "L'app conta da sola, a ritmo" else "Tocca a ogni ripetizione")
+                    }
+                }
+                /** Ritmo: − più veloce, + più lento; si vede quanti secondi dura una ripetizione di questo esercizio. */
+                fun tempoRow() = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; setPadding(0, dp(4), 0, 0)
+                    fun step(t: String, d: Double) = addView(MaterialButton(this@runPlan, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                        text = t; textSize = 18f; contentDescription = if (d < 0) "Più veloce" else "Più lento"
+                        val next = Math.round((tempo + d) * 10) / 10.0
+                        isEnabled = next in Moves.TEMPO_MIN..Moves.TEMPO_MAX
+                        setOnClickListener { tempo = next; Fitness.setTempo(this@runPlan, tempo); timer?.cancel(); stopSpeaking(); reps = 0; render() }
+                    }, LinearLayout.LayoutParams(dp(56), dp(48)))
+                    step("−", -0.1)
+                    addView(TextView(this@runPlan).apply {
+                        text = "Ritmo: ${String.format(Locale.ITALIAN, "%.1f", repMs / 1000.0)} s\na ripetizione"; textSize = 13f; gravity = Gravity.CENTER; setTextColor(col(R.color.text))
+                    }, LinearLayout.LayoutParams(dp(130), -2))
+                    step("+", 0.1)
+                }
+                if (auto) {
+                    // conto automatico: «pronti», 3-2-1, poi una ripetizione ogni [repMs] (o il cronometro); alla fine riposo da solo
+                    val counter = big(if (e.seconds > 0) "${e.seconds}" else "0 / ${e.reps}", if (e.seconds > 0) 80f else 72f, col(R.color.accent)); body.addView(counter)
+                    val status = note("Pronti…"); body.addView(status)
+                    var elapsed = 0L
+                    var paused = false
+                    fun finishSet() { timer?.cancel(); beep(true); say(if (e.seconds > 0) "Finito." else "Serie fatta."); if (needsRest(e)) rest(e.restSec) else nextSet() }
+                    fun countAloud(n: Int) {
+                        val fast = repMs < 1600
+                        if (!voice) beep() else if (!fast || n % 5 == 0 || n >= e.reps - 2) say("$n")
+                    }
+                    fun runAuto(from: Long) {
+                        timer?.cancel()
+                        val total = Moves.GET_READY_MS + if (e.seconds > 0) e.seconds * 1000L else e.reps * repMs
+                        var lastRep = -1; var lastWait = -1; var lastLeft = -1L
+                        timer = object : CountDownTimer(total - from, 100) {
+                            override fun onTick(ms: Long) {
+                                elapsed = total - ms
+                                val (done, wait) = Moves.autoState(elapsed, e.reps, repMs)
+                                if (wait > 0) {
+                                    if (wait != lastWait) {
+                                        lastWait = wait
+                                        if (wait <= 3) { counter.text = "$wait"; status.text = "Si parte tra…"; if (voice) say("$wait") else beep() }
+                                    }
+                                    return
+                                }
+                                if (lastWait != 0) { lastWait = 0; status.text = if (e.seconds > 0) "Tieni la posizione" else "Segui il ritmo dell'omino"; say("Via!"); mv?.restart() }
+                                if (e.seconds > 0) {
+                                    val left = (total - elapsed + 999) / 1000
+                                    if (left != lastLeft) { lastLeft = left; counter.text = "$left"; if (left in 1..3) { if (voice) say("$left") else beep() } }
+                                } else if (done != lastRep) {
+                                    lastRep = done; reps = done; counter.text = "$done / ${e.reps}"; if (done > 0) countAloud(done)
+                                }
+                            }
+                            override fun onFinish() { reps = e.reps; finishSet() }
+                        }.start()
+                    }
+                    lateinit var pauseBtn: MaterialButton
+                    pauseBtn = btn("⏸ Pausa") {
+                        paused = !paused
+                        if (paused) { timer?.cancel(); stopSpeaking(); pauseBtn.text = "▶ Riprendi"; status.text = "In pausa" }
+                        else { pauseBtn.text = "⏸ Pausa"; runAuto(elapsed) }
+                    }
+                    body.addView(pauseBtn)
+                    body.addView(btn("Serie fatta ✓", secondary = true) { finishSet() })
+                    runAuto(0)
+                } else if (e.seconds > 0) {
+                    val t = big("${e.seconds}", 80f, col(R.color.accent)); body.addView(t)
                     body.addView(btn("▶ Avvia il cronometro") {
                         timer?.cancel(); say("Via!")
                         timer = object : CountDownTimer(e.seconds * 1000L, 250) {
@@ -395,15 +499,17 @@ fun MainActivity.runPlan(plan: WorkoutPlan) {
                         }.start()
                     })
                 } else {
-                    val counter = big("$reps / ${e.reps}", 72f, 0xFF16A34A.toInt()); body.addView(counter)
+                    val counter = big("$reps / ${e.reps}", 72f, col(R.color.accent)); body.addView(counter)
                     body.addView(btn("＋1 ripetizione (tocca)") {
                         reps++; counter.text = "$reps / ${e.reps}"
                         if (voice) say("$reps") else beep()
                         if (reps >= e.reps) { beep(true); say("Serie fatta."); if (needsRest(e)) rest(e.restSec) else nextSet() }
                     })
-                    body.addView(btn("Serie fatta ✓") { if (needsRest(e)) rest(e.restSec) else nextSet() })
+                    body.addView(btn("Serie fatta ✓", secondary = true) { if (needsRest(e)) rest(e.restSec) else nextSet() })
                 }
-                body.addView(btn("Salta esercizio") { timer?.cancel(); exI++; setI = 0; reps = 0; render() })
+                body.addView(btn("Salta esercizio", secondary = true) { timer?.cancel(); stopSpeaking(); exI++; setI = 0; reps = 0; render() })
+                body.addView(modeRow())
+                if (auto && e.seconds == 0) body.addView(tempoRow())
                 body.addView(voiceBtn())
             }
         }

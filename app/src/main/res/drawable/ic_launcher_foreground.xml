@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Cuore a forma di mela, con il battito e una foglia: cibo e salute -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
-    <path android:fillColor="#FFFFFF" android:pathData="M54,30a24,24 0,1 0,0.01 0zM54,38a16,16 0,1 1,-0.01 0z" />
-    <path android:fillColor="#FFFFFF" android:pathData="M30,28h4v18a4,4 0,0 1,-4,4zM38,28h2v22h-2zM76,28c4,2 6,8 6,14c0,5 -2,8 -6,9z" />
-    <path android:fillColor="#FFFFFF" android:pathData="M31,54h4v26h-4zM74,54h4v26h-4z" />
+    <group android:pivotX="54" android:pivotY="50" android:scaleX="1.15" android:scaleY="1.15" android:translateY="4">
+        <path android:fillColor="#FFFFFFFF" android:pathData="M54,77 C40,67 31,59 31,48.5 C31,41 36.5,35.5 43.5,35.5 C48,35.5 51.5,38 54,41.5 C56.5,38 60,35.5 64.5,35.5 C71.5,35.5 77,41 77,48.5 C77,59 68,67 54,77 Z" />
+        <path android:strokeColor="#FF1E8E5A" android:strokeWidth="3.4" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M36,55 H45.5 L49,47.5 L53.5,62 L57.5,51 L60.5,55 H72" />
+        <path android:fillColor="#FFC8F2DA" android:pathData="M56.5,39 C56,30 61,24.5 71,22.5 C72,31.5 67,37.5 56.5,39 Z" />
+        <path android:strokeColor="#FF1E8E5A" android:strokeWidth="1.4" android:strokeLineCap="round" android:pathData="M58.5,36.5 Q63,30 68.5,26" />
+    </group>
 </vector>
