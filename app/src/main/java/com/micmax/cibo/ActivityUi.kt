@@ -226,7 +226,9 @@ fun MainActivity.openTrain() {
                 textSize = 14f; gravity = Gravity.CENTER; setTextColor(col(R.color.muted))
             })
             sectionLabel(body, "ALLENATI")
+            listRow(body, "✨", "Crea una scheda", "Stretching, mobilità, gambe, addominali, cardio…: scegli tempo e livello") { openGenerator() }
             listRow(body, "🏋️", "Schede", "Serie, ripetizioni, riposo con cronometro e voce") { openPlans() }
+            listRow(body, "📖", "Esercizi", "Come si fanno, con il disegno animato") { openMoves() }
             listRow(body, "⏱", "Tabata e intervalli", "Lavoro e riposo a tempo, con bip e voce") { openTabata() }
             listRow(body, "📝", "Ho fatto un allenamento", "Aggiungilo a mano: corsa, nuoto, palestra…") { addActDialog { render() } }
             sectionLabel(body, "STORICO")
@@ -290,6 +292,7 @@ fun MainActivity.openPlans() {
             Fitness.plans(this).forEach { p ->
                 listRow(body, "🏋️", p.name, "${p.exercises.size} esercizi · circa ${Fitness.planMinutes(p)} min", onLong = { editPlan(p) { render() } }) { runPlan(p) }
             }
+            listRow(body, "✨", "Crea una scheda nuova", "L'app la compone per te: scegli tipo, tempo e livello") { openGenerator() }
             hintLabel(body, "Tocca una scheda per iniziare. Tieni premuto per modificarla o eliminarla. Il riposo ha il cronometro, con bip e voce.")
         }
         scr.refresh = { render() }
@@ -356,6 +359,8 @@ fun MainActivity.runPlan(plan: WorkoutPlan) {
             val upNext = if (setI + 1 < (e?.sets ?: 0)) "${e!!.name}, serie ${setI + 2} di ${e.sets}" else plan.exercises.getOrNull(exI + 1)?.name?.let { "Prossimo: $it" } ?: "Ultimo esercizio completato"
             val t = big("$sec", 72f, 0xFF2563EB.toInt())
             body.addView(big("Riposo", 22f, col(R.color.muted))); body.addView(t); body.addView(note(upNext))
+            val nextEx = if (setI + 1 < (e?.sets ?: 0)) e else plan.exercises.getOrNull(exI + 1)
+            Moves.find(nextEx?.name ?: "")?.let { m -> body.addView(moveView(m, 120).apply { setOnClickListener { showMove(m) } }) }
             body.addView(btn("Salta il riposo") { nextSet() }); body.addView(voiceBtn())
             say("Riposo. $sec secondi. $upNext.")
             timer = object : CountDownTimer(sec * 1000L, 250) {
@@ -382,6 +387,7 @@ fun MainActivity.runPlan(plan: WorkoutPlan) {
             } else {
                 body.addView(big("Esercizio ${exI + 1} di ${plan.exercises.size}", 14f, col(R.color.muted)))
                 body.addView(big(e.name, 26f))
+                Moves.find(e.name)?.let { m -> body.addView(moveView(m, 170).apply { setOnClickListener { showMove(m) } }) }
                 body.addView(big("Serie ${setI + 1} di ${e.sets}", 18f, col(R.color.muted)))
                 if (e.kg > 0) body.addView(big("${if (e.kg % 1.0 == 0.0) e.kg.toInt() else e.kg} kg", 16f, col(R.color.muted)))
                 say("${e.name}. Serie ${setI + 1} di ${e.sets}. " + if (e.seconds > 0) "${e.seconds} secondi." else "${e.reps} ripetizioni.")

@@ -180,4 +180,37 @@ class TrainingTest {
         assertEquals(d, Gson().fromJson(Gson().toJson(d), Backup.Data::class.java))
         assertEquals("7 h", Health.fmt(Measure("s", "sonno", 7.0, null, 3)))
     }
+
+    @Test fun movesCatalogue() {
+        assertEquals("plank-laterale", Moves.find("Plank laterale (per lato)")?.id)
+        assertEquals("plank", Moves.find("Plank")?.id)
+        assertEquals("squat-profondo", Moves.find("Squat profondo tenuto")?.id)
+        assertEquals("flessori", Moves.find("Allungamento dei fianchi")?.id)
+        assertEquals("gatto", Moves.find("GATTO-CAMMELLO")?.id)
+        assertNull(Moves.find("Panca piana"))
+        Fitness.PRESETS.flatMap { it.exercises }.forEach { assertNotNull(it.name, Moves.find(it.name)) }
+        assertEquals(Moves.ALL.size, Moves.ALL.map { it.id }.toSet().size)
+        // ogni disegno resta dentro il riquadro e tocca il pavimento
+        Moves.ALL.forEach { m ->
+            for (k in 0 until m.frames.size * 6) {
+                val o = Moves.figure(m, k / 6f)
+                for (i in 0 until Moves.SPINE) {
+                    assertTrue("${m.id} x", o[i * 2] in -1f..101f); assertTrue("${m.id} y", o[i * 2 + 1] in -1f..(Moves.FLOOR + 0.01f))
+                }
+            }
+        }
+    }
+
+    @Test fun generatedPlans() {
+        for (g in Moves.Goal.values()) for (lv in 0..2) for (min in listOf(5, 10, 20, 45)) {
+            val p = Moves.generate(g, min, lv, 7L)
+            assertTrue("$g $lv $min vuota", p.exercises.isNotEmpty())
+            assertTrue("$g $lv $min: ${Fitness.planMinutes(p)} min", Fitness.planMinutes(p) in (min * 3 / 4)..(min + 6))
+            p.exercises.forEach { e -> assertNotNull(e.name, Moves.find(e.name)); assertTrue(e.sets > 0); assertTrue(e.reps > 0 || e.seconds > 0) }
+            // la scheda si può riscrivere e rileggere come quelle fatte a mano
+            assertEquals(p.exercises, Fitness.parseExercises(p.exercises.joinToString("\n") { Fitness.exerciseText(it) }))
+            if (lv == 0) assertTrue(p.exercises.none { "jump" in (Moves.find(it.name)?.tags ?: emptySet()) })
+        }
+        assertEquals(Moves.generate(Moves.Goal.CORE, 20, 1, 5L).exercises, Moves.generate(Moves.Goal.CORE, 20, 1, 5L).exercises)
+    }
 }
