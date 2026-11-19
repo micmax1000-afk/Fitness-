@@ -77,6 +77,7 @@ class MainActivity : AppCompatActivity() {
     fun pop() {
         if (stack.size <= 1) return
         stack.removeLast().onClose?.invoke()
+        keepChosenTheme()
         host.removeAllViews(); host.addView(stack.last().view, FrameLayout.LayoutParams(-1, -1))
         stack.last().refresh?.invoke()
     }
@@ -141,6 +142,21 @@ class MainActivity : AppCompatActivity() {
         AppCompatDelegate.setDefaultNightMode(themeMode())
         recreate()
     }
+
+    /**
+     * Android, la prima volta che apre una pagina web (WebView), rimette nelle risorse dell'app il tema del telefono:
+     * con «Chiaro» su un telefono scuro i colori diventavano metà chiari e metà scuri. Qui si rimette il tema scelto.
+     */
+    fun keepChosenTheme() {
+        val want = when (themeChoice()) { 1 -> android.content.res.Configuration.UI_MODE_NIGHT_NO; 2 -> android.content.res.Configuration.UI_MODE_NIGHT_YES; else -> return }
+        val mask = android.content.res.Configuration.UI_MODE_NIGHT_MASK
+        val cfg = android.content.res.Configuration(resources.configuration)
+        if (cfg.uiMode and mask == want) return
+        cfg.uiMode = (cfg.uiMode and mask.inv()) or want
+        @Suppress("DEPRECATION") resources.updateConfiguration(cfg, resources.displayMetrics)
+    }
+
+    override fun onResume() { super.onResume(); keepChosenTheme() }
 
     var tts: android.speech.tts.TextToSpeech? = null
     fun speak(text: String) {

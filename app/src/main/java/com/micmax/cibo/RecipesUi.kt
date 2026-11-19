@@ -140,6 +140,7 @@ fun MainActivity.openRecipeWeb(startUrl: String) {
     val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(col(R.color.bg)) }
     val scr = Scr(root)
     val web = WebView(this)
+    keepChosenTheme()   // la prima pagina web rimette il tema del telefono: si torna a quello scelto
     web.settings.javaScriptEnabled = true; web.settings.domStorageEnabled = true
     web.webViewClient = WebViewClient()
     fun save() {
