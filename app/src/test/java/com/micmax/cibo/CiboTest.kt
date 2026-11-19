@@ -226,4 +226,17 @@ class TrainingTest {
         assertTrue(Icons.has("⚖️")); assertTrue(Icons.has("🏋️")); assertTrue(Icons.has("🏋️\u200D♀️")); assertTrue(Icons.has("2️⃣"))
         assertEquals("2", Icons.digit("2️⃣")); assertFalse(Icons.has("🫁"))
     }
+
+    @Test fun autoCount() {
+        val squat = Moves.find("Squat"); val jj = Moves.find("Jumping jack")
+        assertEquals(3.0, Moves.repSeconds(squat), 0.001)
+        assertTrue(Moves.repSeconds(jj) < Moves.repSeconds(squat))
+        assertEquals(1.5, Moves.repSeconds(squat, 0.5), 0.001); assertEquals(6.0, Moves.repSeconds(squat, 2.0), 0.001)
+        assertEquals(6.0, Moves.repSeconds(squat, 9.0), 0.001)          // oltre il massimo resta al massimo
+        assertEquals(0 to 5, Moves.autoState(0, 12, 3000))               // pronti
+        assertEquals(0 to 1, Moves.autoState(4500, 12, 3000))            // … 1
+        assertEquals(0 to 0, Moves.autoState(5000, 12, 3000))            // via
+        assertEquals(2 to 0, Moves.autoState(5000 + 6500, 12, 3000))     // due ripetizioni fatte
+        assertEquals(12 to 0, Moves.autoState(999_999, 12, 3000))        // mai più di quelle della serie
+    }
 }

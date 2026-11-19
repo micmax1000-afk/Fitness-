@@ -372,6 +372,32 @@ object Moves {
     /** L'esercizio del catalogo che corrisponde a un nome scritto a mano («Plank laterale (per lato)» → plank laterale). Vince la parola più lunga. */
     fun find(name: String): Move? { val n = norm(name); return keyIndex.firstOrNull { n.contains(it.first) }?.second }
 
+    // ---------- ritmo del conteggio automatico ----------
+
+    /** Il ritmo si regola: 0,5 = il doppio più veloce, 2 = il doppio più lento. */
+    const val TEMPO_MIN = 0.5; const val TEMPO_MAX = 2.0
+
+    /** Secondi per una ripetizione: veloci i salti, lenti gli allungamenti e gli esercizi di forza; [tempo] li allunga o accorcia. */
+    fun repSeconds(m: Move?, tempo: Double = 1.0): Double {
+        val base = when {
+            m == null -> 3.0
+            m.id == "burpee" -> 4.0
+            "jump" in m.tags -> 1.2
+            "cardio" in m.tags -> 1.5
+            "stretch" in m.tags || "mobility" in m.tags -> 2.5
+            else -> 3.0
+        }
+        return Math.round(base * tempo.coerceIn(TEMPO_MIN, TEMPO_MAX) * 10) / 10.0
+    }
+
+    /** Prima di ogni serie: «Pronti» (mentre la voce dice l'esercizio) e poi 3, 2, 1. */
+    const val GET_READY_MS = 5000L
+
+    /** Durante una serie automatica, dopo [elapsedMs]: (ripetizioni fatte, secondi di attesa che mancano; 0 = si conta). */
+    fun autoState(elapsedMs: Long, reps: Int, repMs: Long): Pair<Int, Int> =
+        if (elapsedMs < GET_READY_MS) 0 to ((GET_READY_MS - elapsedMs + 999) / 1000).toInt().coerceAtLeast(1)
+        else ((elapsedMs - GET_READY_MS) / repMs.coerceAtLeast(1)).toInt().coerceAtMost(reps) to 0
+
     // ---------- generatore di schede ----------
 
     enum class Goal(val label: String, val emoji: String, val sub: String) {

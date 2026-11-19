@@ -21,14 +21,18 @@ class MoveView(c: Context, var move: Move?, private val animate: Boolean = true)
     private val floor = Paint(near).apply { color = c.col(R.color.stroke) }
     private val wall = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = c.col(R.color.stroke) }
     private val spine = Path()
-    private val start = System.currentTimeMillis()
+    private var start = System.currentTimeMillis()
+    /** Durata di un fotogramma: con il conteggio automatico va a tempo con le ripetizioni (una ripetizione = due fotogrammi). */
+    var frameMs = 1300f
+    /** Riparte dalla prima posa (all'inizio di una serie, per andare a tempo con il conteggio). */
+    fun restart() { start = System.currentTimeMillis(); invalidate() }
 
     override fun onDraw(cv: Canvas) {
         val m = move ?: return
         val size = minOf(width, height).toFloat(); if (size <= 0) return
         val k = size / 100f
         cv.save(); cv.translate((width - size) / 2, (height - size) / 2); cv.scale(k, k)
-        val t = if (animate) (System.currentTimeMillis() - start) / 1300f else 0f
+        val t = if (animate) (System.currentTimeMillis() - start) / frameMs else 0f
         val o = Moves.figure(m, t)
         fun x(i: Int) = o[i * 2]
         fun y(i: Int) = o[i * 2 + 1]
