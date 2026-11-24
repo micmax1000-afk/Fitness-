@@ -39,7 +39,7 @@ data class Move(
 }
 
 enum class Anchor { FEET, HANDS, CENTER, NEAR_FOOT }
-enum class Prop { NONE, WALL_FRONT, WALL_BACK, STEP, DUMBBELLS, KETTLEBELL, BAND_FRONT, BAND_HANDS, ROPE, BAR, CHAIR }
+enum class Prop { NONE, WALL_FRONT, WALL_BACK, STEP, DUMBBELLS, KETTLEBELL, KB_RIGHT, BAND_FRONT, BAND_HANDS, BAND_FEET, BAND_KNEES, ROPE, BAR, CHAIR, SEAT_HANDS, SEAT_FEET, SEAT_BACK_FOOT, SEAT_HIP, DB_RIGHT, WALL_HAND_BACK, BALL_BACK, BALL_FEET }
 
 /** Catalogo degli esercizi con i disegni, e il generatore di schede. Niente Android qui: si prova con i test. */
 object Moves {
@@ -175,6 +175,21 @@ object Moves {
             Prop.BAND_FRONT -> { val ax = (f0[R_HAND * 2] + 0f).coerceAtLeast(x(R_HAND)) + 12f * k; val ay = f0[R_HAND * 2 + 1]
                 out += Shape.Line(x(R_HAND), y(R_HAND), ax, ay, 1.6f * k); out += Shape.Box(ax, ay - 3f * k, ax + 2.5f * k, ay + 3f * k) }
             Prop.BAND_HANDS -> out += Shape.Line(x(L_HAND), y(L_HAND), x(R_HAND), y(R_HAND), 1.6f * k)
+            Prop.BAND_FEET -> { out += Shape.Line(x(R_FOOT), y(R_FOOT), x(R_HAND), y(R_HAND), 1.4f * k); out += Shape.Line(x(L_FOOT), y(L_FOOT), x(L_HAND), y(L_HAND), 1.4f * k) }
+            Prop.BAND_KNEES -> out += Shape.Line(x(L_KNEE), y(L_KNEE) + 3f * k, x(R_KNEE), y(R_KNEE) + 3f * k, 2f * k)
+            Prop.KB_RIGHT -> out += Shape.Dot(x(R_HAND), y(R_HAND) + 4.5f * k, 4.5f * k)
+            Prop.DB_RIGHT -> dumbbell(R_HAND, R_ELB)
+            Prop.WALL_HAND_BACK -> { val wx = minOf(f0[R_HAND * 2], f0[L_HAND * 2]) - 3f * k; out += Shape.Box(wx - 4f, 8f, wx, FLOOR + 2f) }
+            Prop.SEAT_HIP -> { val sx = f0[HIP * 2] - 3f * k; val sy = f0[HIP * 2 + 1] + 3f * k   // la sedia dove si è seduti all'inizio
+                out += Shape.Box(sx - 12f * k, sy, sx + 10f * k, sy + 3f * k); out += Shape.Box(sx - 12f * k, sy - 24f * k, sx - 9f * k, FLOOR + 3f); out += Shape.Box(sx + 7f * k, sy, sx + 10f * k, FLOOR + 3f) }
+            Prop.BALL_BACK -> { val r = ((FLOOR - y(HIP)) / 2 + 1f).coerceAtLeast(5f); out += Shape.Dot(x(HIP) - 3f * k, FLOOR - r + 1f, r) }
+            Prop.BALL_FEET -> { val fx = f0[R_FOOT * 2]; val fy = f0[R_FOOT * 2 + 1]; val r = ((FLOOR - fy) / 2).coerceAtLeast(5f); out += Shape.Dot(fx, fy + r + 1f, r) }
+            Prop.SEAT_HANDS, Prop.SEAT_FEET, Prop.SEAT_BACK_FOOT -> {   // una sedia con il piano sotto mani o piedi (posa di partenza)
+                val (a, b) = when (m.prop) { Prop.SEAT_HANDS -> R_HAND to L_HAND; Prop.SEAT_FEET -> R_FOOT to L_FOOT; else -> L_FOOT to L_FOOT }
+                val sx = (f0[a * 2] + f0[b * 2]) / 2; val sy = maxOf(f0[a * 2 + 1], f0[b * 2 + 1]) + 2.5f * k
+                out += Shape.Box(sx - 11f * k, sy, sx + 11f * k, sy + 3f * k)
+                out += Shape.Box(sx - 11f * k, sy, sx - 8f * k, FLOOR + 3f); out += Shape.Box(sx + 8f * k, sy, sx + 11f * k, FLOOR + 3f)
+            }
             Prop.ROPE -> {   // la corda gira: sotto i piedi a metà del salto, sopra la testa quando si atterra
                 val ph = ((t % 2f) + 2f) % 2f / 2f
                 val c = kotlin.math.cos(ph * 2 * Math.PI).toFloat()
@@ -542,14 +557,316 @@ object Moves {
             listOf(Pose(rUa = -15f, rFa = -15f, lUa = -13f, lFa = -13f, rTh = 80f, rSh = 0f, lTh = 82f, lSh = 2f),
                 Pose(rUa = -80f, rFa = 10f, lUa = -78f, lFa = 12f, rTh = 80f, rSh = 65f, lTh = 82f, lSh = 67f)),
             reps = 10, anchor = Anchor.HANDS, prop = Prop.CHAIR, equip = setOf("sedia")),
+
+        // ----- altri esercizi con gli attrezzi -----
+        Move("affondi-manubri", "Affondi con i manubri", listOf("affondi con i manubri", "affondi con manubri"), setOf("legs", "strength"),
+            "Un manubrio per mano lungo i fianchi. Fai un passo lungo e scendi finché il ginocchio dietro sfiora terra, poi torna su e cambia gamba.",
+            listOf(Pose(rUa = 2f, rFa = 2f, lUa = 4f, lFa = 4f), LUNGE.copy(rUa = 0f, rFa = 0f, lUa = 2f, lFa = 2f)),
+            reps = 10, perSide = true, prop = Prop.DUMBBELLS, equip = setOf("manubri")),
+        Move("squat-manubri", "Squat con i manubri", listOf("squat con i manubri", "squat con manubri"), setOf("legs", "strength"),
+            "Manubri lungo i fianchi. Scendi in squat con il petto alto e i pesi che scendono dritti, poi risali spingendo coi talloni.",
+            listOf(Pose(rUa = 2f, rFa = 2f, lUa = 4f, lFa = 4f), Pose(torso = 148f, rUa = 8f, rFa = 8f, lUa = 10f, lFa = 10f, rTh = 82f, rSh = -18f, lTh = 84f, lSh = -16f)),
+            reps = 12, prop = Prop.DUMBBELLS, equip = setOf("manubri")),
+        Move("alzate-laterali", "Alzate laterali", listOf("alzate laterali", "lateral raise"), setOf("upper", "strength"),
+            "In piedi, manubri lungo i fianchi, gomiti appena piegati. Alza le braccia di lato fino all'altezza delle spalle, poi scendi piano.",
+            listOf(Pose(rUa = 10f, rFa = 12f, lUa = -10f, lFa = -12f, rTh = 5f, rSh = 5f, lTh = -5f, lSh = -5f), Pose(rUa = 85f, rFa = 92f, lUa = -85f, lFa = -92f, rTh = 5f, rSh = 5f, lTh = -5f, lSh = -5f)),
+            reps = 12, front = true, prop = Prop.DUMBBELLS, equip = setOf("manubri")),
+        Move("alzate-frontali", "Alzate frontali", listOf("alzate frontali", "front raise"), setOf("upper", "strength"),
+            "Manubri davanti alle cosce. Alza le braccia tese davanti a te fino all'altezza delle spalle, poi scendi piano senza dondolare.",
+            listOf(Pose(rUa = 8f, rFa = 8f, lUa = 10f, lFa = 10f), Pose(rUa = 88f, rFa = 90f, lUa = 86f, lFa = 88f)),
+            reps = 12, prop = Prop.DUMBBELLS, equip = setOf("manubri")),
+        Move("floor-press", "Distensioni a terra con i manubri", listOf("distensioni a terra", "floor press", "panca a terra"), setOf("upper", "strength"),
+            "Sdraiato, ginocchia piegate, gomiti appoggiati a terra e manubri sopra il petto. Spingi i pesi in alto a braccia tese, poi riscendi finché i gomiti toccano terra.",
+            listOf(SUPINE_KNEES.copy(rUa = 80f, rFa = 172f, lUa = 82f, lFa = 174f), SUPINE_KNEES.copy(rUa = 178f, rFa = 178f, lUa = 180f, lFa = 180f)),
+            reps = 12, prop = Prop.DUMBBELLS, equip = setOf("manubri")),
+        Move("tricipiti-testa", "Estensioni per i tricipiti", listOf("estensioni per i tricipiti", "french press", "tricipiti sopra la testa"), setOf("upper", "strength"),
+            "In piedi, un manubrio tenuto con due mani sopra la testa. Piega i gomiti e porta il peso dietro la testa, poi distendi le braccia. Gomiti stretti e fermi.",
+            listOf(Pose(rUa = 175f, rFa = 177f, lUa = 177f, lFa = 179f), Pose(rUa = 172f, rFa = -12f, lUa = 174f, lFa = -10f)),
+            reps = 12, prop = Prop.KETTLEBELL, equip = setOf("manubri")),
+        Move("kickback", "Slanci indietro per i tricipiti", listOf("slanci indietro per i tricipiti", "kickback tricipiti", "tricipiti indietro"), setOf("upper", "strength"),
+            "Busto inclinato a schiena dritta, gomiti alti vicino ai fianchi. Distendi le braccia indietro fino a tenderle, poi torna con calma.",
+            listOf(Pose(torso = 118f, rUa = -62f, rFa = 0f, lUa = -60f, lFa = 2f, rTh = 15f, rSh = -10f, lTh = 17f, lSh = -8f),
+                Pose(torso = 118f, rUa = -62f, rFa = -62f, lUa = -60f, lFa = -60f, rTh = 15f, rSh = -10f, lTh = 17f, lSh = -8f)),
+            reps = 12, prop = Prop.DUMBBELLS, equip = setOf("manubri")),
+        Move("thruster", "Squat e spinta in alto", listOf("thruster", "squat e spinta", "squat con distensione"), setOf("legs", "upper", "cardio", "strength"),
+            "Manubri alle spalle. Scendi in squat, poi risali con forza e spingi i pesi sopra la testa nello stesso movimento. Riporta i pesi alle spalle e riparti.",
+            listOf(Pose(rUa = 30f, rFa = 175f, lUa = -30f, lFa = -175f, rTh = 68f, rSh = 12f, lTh = -68f, lSh = -12f), Pose(rUa = 165f, rFa = 175f, lUa = -165f, lFa = -175f, rTh = 8f, rSh = 8f, lTh = -8f, lSh = -8f)),
+            reps = 10, minLevel = 2, front = true, prop = Prop.DUMBBELLS, equip = setOf("manubri")),
+        Move("renegade", "Rematore in plank", listOf("rematore in plank", "renegade"), setOf("upper", "core", "strength"),
+            "In plank a braccia tese con le mani sui manubri, piedi larghi. Tira un manubrio verso il fianco tenendo il bacino fermo, posalo e cambia braccio.",
+            listOf(PLANK_HIGH, PLANK_HIGH.copy(rUa = -65f, rFa = 10f), PLANK_HIGH, PLANK_HIGH.copy(lUa = -65f, lFa = 10f)),
+            reps = 10, minLevel = 3, prop = Prop.DUMBBELLS, equip = setOf("manubri")),
+        Move("stacco-kb", "Stacco con la kettlebell", listOf("stacco con la kettlebell", "stacco kettlebell"), setOf("legs", "back", "strength"),
+            "Kettlebell a terra tra i piedi. Piegati dalle anche con la schiena dritta e ginocchia morbide, prendi il peso e alzati spingendo il bacino avanti.",
+            listOf(Pose(rUa = 4f, rFa = 4f, lUa = 5f, lFa = 5f), Pose(torso = 108f, rUa = 0f, rFa = 0f, lUa = 1f, lFa = 1f, rTh = 25f, rSh = -15f, lTh = 27f, lSh = -13f)),
+            reps = 12, prop = Prop.KETTLEBELL, equip = setOf("kettlebell")),
+        Move("rematore-kb", "Rematore con la kettlebell", listOf("rematore con la kettlebell", "rematore kettlebell"), setOf("upper", "back", "strength"),
+            "Una mano su un ginocchio, busto inclinato e schiena dritta, kettlebell nell'altra mano. Tira il gomito indietro verso il fianco, poi scendi.",
+            listOf(Pose(torso = 112f, rUa = 0f, rFa = 0f, lUa = 40f, lFa = 25f, rTh = 15f, rSh = -10f, lTh = 30f, lSh = -5f),
+                Pose(torso = 112f, rUa = -65f, rFa = 10f, lUa = 40f, lFa = 25f, rTh = 15f, rSh = -10f, lTh = 30f, lSh = -5f)),
+            reps = 10, perSide = true, prop = Prop.KB_RIGHT, equip = setOf("kettlebell")),
+        Move("squat-elastico", "Squat con l'elastico", listOf("squat con l'elastico", "squat elastico"), setOf("legs", "strength", "lowimpact"),
+            "Elastico sotto i piedi, estremità tenute all'altezza delle spalle. Scendi in squat e risali spingendo contro l'elastico.",
+            listOf(Pose(rUa = -20f, rFa = 160f, lUa = -18f, lFa = 162f), Pose(torso = 148f, rUa = 20f, rFa = 160f, lUa = 22f, lFa = 162f, rTh = 82f, rSh = -18f, lTh = 84f, lSh = -16f)),
+            reps = 15, prop = Prop.BAND_FEET, equip = setOf("elastico")),
+        Move("spalle-elastico", "Distensioni con l'elastico", listOf("distensioni con l'elastico", "spalle elastico"), setOf("upper", "strength", "lowimpact"),
+            "Elastico sotto i piedi, mani alle spalle. Spingi le braccia sopra la testa contro l'elastico, poi torna giù con controllo.",
+            listOf(Pose(rUa = 95f, rFa = 178f, lUa = -95f, lFa = -178f, rTh = 6f, rSh = 6f, lTh = -6f, lSh = -6f), Pose(rUa = 165f, rFa = 175f, lUa = -165f, lFa = -175f, rTh = 6f, rSh = 6f, lTh = -6f, lSh = -6f)),
+            reps = 12, front = true, prop = Prop.BAND_FEET, equip = setOf("elastico")),
+        Move("curl-elastico", "Curl con l'elastico", listOf("curl con l'elastico", "curl elastico"), setOf("upper", "strength", "lowimpact"),
+            "Elastico sotto i piedi, palmi in avanti. Piega i gomiti portando le mani alle spalle, gomiti fermi, poi scendi lento.",
+            listOf(Pose(rUa = 2f, rFa = 2f, lUa = 4f, lFa = 4f), Pose(rUa = 6f, rFa = 165f, lUa = 8f, lFa = 167f)),
+            reps = 15, prop = Prop.BAND_FEET, equip = setOf("elastico")),
+        Move("passi-elastico", "Passi laterali con l'elastico", listOf("passi laterali", "camminata laterale", "mostro"), setOf("legs", "strength", "lowimpact"),
+            "Elastico sopra le ginocchia, gambe un po' piegate. Fai un passo di lato tenendo l'elastico teso, poi avvicina l'altro piede senza farlo cedere.",
+            listOf(Pose(torso = 175f, rUa = 25f, rFa = -15f, lUa = -25f, lFa = 15f, rTh = 18f, rSh = 6f, lTh = -18f, lSh = -6f),
+                Pose(torso = 175f, rUa = 25f, rFa = -15f, lUa = -25f, lFa = 15f, rTh = 34f, rSh = 20f, lTh = -14f, lSh = -4f)),
+            reps = 12, perSide = true, front = true, prop = Prop.BAND_KNEES, equip = setOf("elastico")),
+        Move("ginocchia-appeso", "Ginocchia al petto alla sbarra", listOf("ginocchia al petto alla sbarra", "hanging knee", "sollevamento ginocchia"), setOf("core", "strength"),
+            "Appeso alla sbarra, spalle attive. Porta le ginocchia verso il petto senza dondolare, poi scendi lento.",
+            listOf(Pose(rUa = 180f, rFa = 180f, lUa = 182f, lFa = 182f, rTh = 2f, rSh = 0f, lTh = 4f, lSh = 2f, air = 3f),
+                Pose(rUa = 180f, rFa = 180f, lUa = 182f, lFa = 182f, rTh = 100f, rSh = 0f, lTh = 102f, lSh = 2f, air = 26.5f)),
+            reps = 10, minLevel = 2, anchor = Anchor.HANDS, prop = Prop.BAR, equip = setOf("sbarra")),
+        Move("appeso", "Appeso alla sbarra", listOf("appeso alla sbarra", "dead hang", "sospensione"), setOf("upper", "back"),
+            "Appeso alla sbarra a braccia tese, piedi staccati da terra. Respira e tieni: allunga la schiena e rinforza la presa.",
+            listOf(Pose(rUa = 180f, rFa = 180f, lUa = 182f, lFa = 182f, rTh = 2f, rSh = 0f, lTh = 4f, lSh = 2f, air = 3f), Pose(rUa = 180f, rFa = 180f, lUa = 182f, lFa = 182f, rTh = 6f, rSh = -6f, lTh = 0f, lSh = 4f, air = 3f)),
+            secs = 20, anchor = Anchor.HANDS, prop = Prop.BAR, equip = setOf("sbarra")),
+        Move("bulgari", "Affondi bulgari", listOf("affondi bulgari", "bulgarian", "affondo bulgaro"), setOf("legs", "strength"),
+            "Piede dietro appoggiato su una sedia, piede davanti lontano. Scendi dritto finché la coscia davanti è parallela al pavimento, poi risali spingendo col tallone.",
+            listOf(Pose(rUa = 20f, rFa = 40f, lUa = -20f, lFa = 10f, rTh = 25f, rSh = 5f, lTh = -20f, lSh = -100f),
+                Pose(rUa = 20f, rFa = 40f, lUa = -20f, lFa = 10f, rTh = 85f, rSh = 0f, lTh = -28f, lSh = -159f)),
+            reps = 8, perSide = true, minLevel = 2, anchor = Anchor.NEAR_FOOT, prop = Prop.SEAT_BACK_FOOT, equip = setOf("sedia")),
+        Move("flessioni-sedia", "Flessioni con le mani sulla sedia", listOf("flessioni con le mani sulla sedia", "flessioni inclinate"), setOf("upper", "strength"),
+            "Mani sul bordo di una sedia ferma (contro il muro), corpo dritto. Scendi con il petto verso la sedia e spingi su. Più facile delle flessioni a terra.",
+            listOf(Pose(torso = 145f, rUa = 0f, rFa = 0f, lUa = 3f, lFa = 3f, rTh = -35f, rSh = -35f, lTh = -34f, lSh = -34f),
+                Pose(torso = 131f, rUa = -60f, rFa = 40f, lUa = -56f, lFa = 44f, rTh = -49f, rSh = -49f, lTh = -48f, lSh = -48f)),
+            reps = 10, anchor = Anchor.HANDS, prop = Prop.SEAT_HANDS, equip = setOf("sedia")),
+        Move("flessioni-rialzate", "Flessioni con i piedi sulla sedia", listOf("flessioni con i piedi sulla sedia", "flessioni piedi rialzati"), setOf("upper", "strength"),
+            "Piedi su una sedia, mani a terra sotto le spalle, corpo dritto. Scendi col petto verso terra e spingi su. Lavora di più la parte alta del petto e le spalle.",
+            listOf(Pose(torso = 95f, rUa = 0f, rFa = 0f, lUa = 3f, lFa = 3f, rTh = -85f, rSh = -85f, lTh = -84f, lSh = -84f),
+                Pose(torso = 86f, rUa = -60f, rFa = 40f, lUa = -56f, lFa = 44f, rTh = -94f, rSh = -94f, lTh = -93f, lSh = -93f)),
+            reps = 8, minLevel = 3, anchor = Anchor.HANDS, prop = Prop.SEAT_FEET, equip = setOf("sedia")),
+
+        // ----- corpo libero: gambe -----
+        Move("polpacci-su", "Sollevamenti sui polpacci", listOf("sollevamenti sui polpacci", "calf raise", "punte dei piedi su"), setOf("legs", "strength", "lowimpact"),
+            "In piedi, piedi paralleli. Sali sulle punte più in alto che puoi, tieni un attimo e scendi piano. Se serve appoggiati a un muro.",
+            listOf(Pose(rUa = 4f, rFa = 4f, lUa = 6f, lFa = 6f), Pose(rUa = 4f, rFa = 4f, lUa = 6f, lFa = 6f, rSh = 4f, lSh = 4f, air = 4f)),
+            reps = 15),
+        Move("ponte-rialzato", "Ponte con i piedi sulla sedia", listOf("ponte con i piedi sulla sedia", "ponte rialzato"), setOf("legs", "core", "strength"),
+            "Sdraiato, talloni sul bordo di una sedia, ginocchia piegate. Spingi con i talloni e solleva il bacino, poi scendi piano.",
+            listOf(Pose(torso = -90f, rUa = 90f, rFa = 90f, lUa = 92f, lFa = 92f, rTh = 150f, rSh = 100f, lTh = 152f, lSh = 102f),
+                Pose(torso = -62f, rUa = 90f, rFa = 90f, lUa = 92f, lFa = 92f, rTh = 112f, rSh = 82f, lTh = 114f, lSh = 84f)),
+            reps = 12, minLevel = 2, prop = Prop.SEAT_FEET, equip = setOf("sedia")),
+        Move("affondi-indietro", "Affondi all'indietro", listOf("affondi all'indietro", "affondo indietro", "reverse lunge"), setOf("legs", "strength"),
+            "Fai un passo lungo all'indietro e scendi finché il ginocchio dietro sfiora terra. Spingi col piede davanti e torna su. Più gentile per le ginocchia.",
+            listOf(Pose(rUa = 80f, rFa = 90f, lUa = 82f, lFa = 92f), LUNGE.copy(rUa = 80f, rFa = 90f, lUa = 82f, lFa = 92f)),
+            reps = 10, perSide = true, anchor = Anchor.NEAR_FOOT),
+        Move("affondi-camminata", "Affondi in camminata", listOf("affondi in camminata", "walking lunge"), setOf("legs", "strength", "cardio"),
+            "Fai un affondo, poi porta avanti la gamba dietro e fai subito l'affondo con l'altra, avanzando. Busto dritto.",
+            listOf(LUNGE, Pose(rUa = -35f, rFa = 32f, lUa = -30f, lFa = 35f, rTh = 20f, rSh = 0f, lTh = 40f, lSh = -30f), LUNGE.copy(rTh = -30f, rSh = -82f, lTh = 85f, lSh = 0f)),
+            reps = 12, minLevel = 2, anchor = Anchor.CENTER),
+        Move("sumo-salto", "Squat sumo con salto", listOf("squat sumo con salto", "sumo jump"), setOf("legs", "cardio", "jump"),
+            "Gambe larghe, punte in fuori. Scendi in squat sumo e salta in alto, atterrando morbido di nuovo a gambe larghe.",
+            listOf(Pose(rUa = 20f, rFa = -110f, lUa = -20f, lFa = 110f, rTh = 72f, rSh = 12f, lTh = -72f, lSh = -12f),
+                Pose(rUa = 150f, rFa = 160f, lUa = -150f, lFa = -160f, rTh = 18f, rSh = 14f, lTh = -18f, lSh = -14f, air = 12f)),
+            reps = 10, minLevel = 2, front = true),
+        Move("slanci-laterali", "Slanci laterali da sdraiati", listOf("slanci laterali", "gamba laterale", "side leg raise"), setOf("legs", "strength", "lowimpact"),
+            "Sdraiato su un fianco, testa sul braccio, gambe tese. Solleva la gamba di sopra senza ruotare il bacino, poi scendi piano.",
+            listOf(Pose(torso = 90f, rUa = 90f, rFa = 95f, lUa = 2f, lFa = 2f, rTh = -90f, rSh = -90f, lTh = -88f, lSh = -88f),
+                Pose(torso = 90f, rUa = 90f, rFa = 95f, lUa = 2f, lFa = 2f, rTh = -90f, rSh = -90f, lTh = -50f, lSh = -50f)),
+            reps = 15, perSide = true, front = true, anchor = Anchor.CENTER),
+
+        // ----- corpo libero: parte alta -----
+        Move("flessioni-strette", "Flessioni strette", listOf("flessioni strette", "flessioni diamante", "diamond"), setOf("upper", "strength"),
+            "Come le flessioni, ma con le mani vicine sotto il petto e i gomiti che scendono lungo i fianchi. Lavorano di più i tricipiti.",
+            listOf(PLANK_HIGH, Pose(torso = 105f, rUa = -70f, rFa = 30f, lUa = -68f, lFa = 32f, rTh = -75f, rSh = -75f, lTh = -73f, lSh = -73f)),
+            reps = 8, minLevel = 2),
+        Move("flessioni-larghe", "Flessioni larghe", listOf("flessioni larghe", "wide push"), setOf("upper", "strength"),
+            "Come le flessioni, con le mani più larghe delle spalle. Scendi col petto fra le mani: lavora di più il petto.",
+            listOf(PLANK_HIGH, Pose(torso = 103f, rUa = -45f, rFa = 50f, lUa = -42f, lFa = 52f, rTh = -77f, rSh = -77f, lTh = -76f, lSh = -76f)),
+            reps = 8, minLevel = 2),
+        Move("flessioni-t", "Flessioni con rotazione", listOf("flessioni con rotazione", "flessioni a t", "t push"), setOf("upper", "core", "strength"),
+            "Fai una flessione, poi ruota il corpo su un braccio portando l'altro verso il soffitto: il corpo fa una T. Torna giù e cambia lato.",
+            listOf(Pose(torso = 115f, rUa = 0f, rFa = 0f, lUa = 6f, lFa = 6f, rTh = -65f, rSh = -65f, lTh = -62f, lSh = -64f),
+                Pose(torso = 115f, rUa = 0f, rFa = 0f, lUa = 175f, lFa = 175f, rTh = -65f, rSh = -65f, lTh = -62f, lSh = -64f)),
+            reps = 8, minLevel = 3, front = true, anchor = Anchor.CENTER),
+        Move("nuotata", "Nuotata a terra", listOf("nuotata", "swimmer", "nuoto a terra"), setOf("back", "core", "strength"),
+            "A pancia in giù, braccia lunghe davanti. Solleva un braccio e la gamba opposta, poi cambia, come se nuotassi. Collo lungo.",
+            listOf(Pose(torso = 94f, rUa = 108f, rFa = 108f, lUa = 96f, lFa = 96f, rTh = -90f, rSh = -90f, lTh = -80f, lSh = -78f),
+                Pose(torso = 94f, rUa = 96f, rFa = 96f, lUa = 108f, lFa = 108f, rTh = -80f, rSh = -78f, lTh = -90f, lSh = -90f)),
+            reps = 20, anchor = Anchor.CENTER),
+
+        // ----- corpo libero: addominali -----
+        Move("crunch-inverso", "Crunch inverso", listOf("crunch inverso", "reverse crunch"), setOf("core", "strength"),
+            "Sdraiato, ginocchia piegate in alto. Porta le ginocchia verso il petto staccando un po' il bacino da terra, poi scendi lento.",
+            listOf(Pose(torso = -90f, rUa = 90f, rFa = 90f, lUa = 92f, lFa = 92f, rTh = 178f, rSh = 92f, lTh = 176f, lSh = 94f),
+                Pose(torso = -80f, rUa = 90f, rFa = 90f, lUa = 92f, lFa = 92f, rTh = -150f, rSh = 120f, lTh = -152f, lSh = 118f)),
+            reps = 12, anchor = Anchor.CENTER),
+        Move("sforbiciate", "Sforbiciate", listOf("sforbiciate", "flutter", "battiti di gambe"), setOf("core", "strength"),
+            "Sdraiato, mani sotto i glutei, gambe tese e staccate da terra. Alza e abbassa le gambe alternandole veloce, schiena appoggiata.",
+            listOf(Pose(torso = -100f, head = 15f, rUa = 92f, rFa = 92f, lUa = 94f, lFa = 94f, rTh = 100f, rSh = 100f, lTh = 120f, lSh = 120f),
+                Pose(torso = -100f, head = 15f, rUa = 92f, rFa = 92f, lUa = 94f, lFa = 94f, rTh = 120f, rSh = 120f, lTh = 100f, lSh = 100f)),
+            secs = 30, minLevel = 2, anchor = Anchor.CENTER),
+        Move("tocchi-talloni", "Tocchi dei talloni", listOf("tocchi dei talloni", "heel touch"), setOf("core", "strength"),
+            "Sdraiato, ginocchia piegate e spalle staccate. Allunga una mano verso il tallone dello stesso lato piegandoti di lato, poi l'altra.",
+            listOf(SUPINE_KNEES.copy(torso = -115f, head = 15f, rUa = 100f, rFa = 100f, lUa = 108f, lFa = 108f),
+                SUPINE_KNEES.copy(torso = -115f, head = 15f, rUa = 108f, rFa = 108f, lUa = 100f, lFa = 100f)),
+            reps = 20, anchor = Anchor.CENTER),
+        Move("inclinazioni-manubrio", "Inclinazioni laterali con il manubrio", listOf("inclinazioni laterali con il manubrio", "side bend"), setOf("core", "strength"),
+            "In piedi, un manubrio in una mano, l'altra dietro la testa. Piegati di lato verso il peso, poi risali stringendo il fianco opposto.",
+            listOf(Pose(rUa = 4f, rFa = 4f, lUa = -150f, lFa = -40f, rTh = 6f, rSh = 6f, lTh = -6f, lSh = -6f),
+                Pose(torso = 165f, rUa = 12f, rFa = 12f, lUa = -165f, lFa = -55f, rTh = 6f, rSh = 6f, lTh = -6f, lSh = -6f)),
+            reps = 12, perSide = true, front = true, prop = Prop.DB_RIGHT, equip = setOf("manubri")),
+
+        // ----- corpo libero: cardio -----
+        Move("skater", "Salti laterali", listOf("salti laterali", "skater", "pattinatore"), setOf("cardio", "legs", "jump"),
+            "Salta di lato atterrando su un piede, l'altra gamba passa dietro. Le braccia oscillano come un pattinatore. Poi salta dall'altra parte.",
+            listOf(Pose(torso = 170f, rUa = -40f, rFa = -30f, lUa = -40f, lFa = -30f, rTh = 25f, rSh = -10f, lTh = 30f, lSh = 45f),
+                Pose(rUa = 10f, rFa = 10f, lUa = -10f, lFa = -10f, rTh = 5f, rSh = 5f, lTh = -5f, lSh = -5f, air = 8f),
+                Pose(torso = 190f, rUa = 40f, rFa = 30f, lUa = 40f, lFa = 30f, rTh = -30f, rSh = -45f, lTh = -25f, lSh = 10f),
+                Pose(rUa = 10f, rFa = 10f, lUa = -10f, lFa = -10f, rTh = 5f, rSh = 5f, lTh = -5f, lSh = -5f, air = 8f)),
+            reps = 16, minLevel = 2, front = true, anchor = Anchor.CENTER),
+        Move("affondi-veloci", "Affondi alternati veloci", listOf("affondi alternati veloci", "affondi veloci"), setOf("cardio", "legs"),
+            "Affondi alternati a ritmo sostenuto, senza saltare: indietro con una gamba, su, indietro con l'altra.",
+            listOf(Pose(rUa = -35f, rFa = 32f, lUa = -30f, lFa = 35f), LUNGE, Pose(rUa = -35f, rFa = 32f, lUa = -30f, lFa = 35f), LUNGE.copy(rTh = -30f, rSh = -82f, lTh = 85f, lSh = 0f)),
+            secs = 30, anchor = Anchor.CENTER),
+        Move("orso", "Camminata dell'orso", listOf("camminata dell'orso", "bear crawl", "orso"), setOf("cardio", "core", "upper"),
+            "A quattro zampe con le ginocchia sollevate di poco da terra. Cammina avanti muovendo insieme mano e piede opposti, schiena piatta.",
+            listOf(Pose(torso = 100f, rUa = 0f, rFa = 0f, lUa = 15f, lFa = 15f, rTh = 15f, rSh = -75f, lTh = -10f, lSh = -80f),
+                Pose(torso = 100f, rUa = 15f, rFa = 15f, lUa = 0f, lFa = 0f, rTh = -10f, rSh = -80f, lTh = 15f, lSh = -75f)),
+            secs = 30, minLevel = 2, anchor = Anchor.CENTER),
+        Move("inchworm", "Bruco", listOf("bruco", "inchworm"), setOf("warmup", "mobility", "core", "upper"),
+            "In piedi, piegati e appoggia le mani a terra. Cammina con le mani in avanti fino al plank, poi torna indietro con le mani e risali.",
+            listOf(Pose(), Pose(torso = 18f, rUa = 5f, rFa = 0f, lUa = 6f, lFa = 1f, rTh = -4f, rSh = 4f, lTh = -4f, lSh = 4f),
+                Pose(torso = 70f, rUa = 30f, rFa = 30f, lUa = 31f, lFa = 31f, rTh = -15f, rSh = -15f, lTh = -16f, lSh = -16f), PLANK_HIGH,
+                Pose(torso = 70f, rUa = 30f, rFa = 30f, lUa = 31f, lFa = 31f, rTh = -15f, rSh = -15f, lTh = -16f, lSh = -16f),
+                Pose(torso = 18f, rUa = 5f, rFa = 0f, lUa = 6f, lFa = 1f, rTh = -4f, rSh = 4f, lTh = -4f, lSh = 4f)),
+            reps = 6, anchor = Anchor.FEET),
+
+        // ----- equilibrio -----
+        Move("una-gamba", "Equilibrio su una gamba", listOf("equilibrio su una gamba", "su una gamba", "fenicottero"), setOf("balance", "legs", "lowimpact"),
+            "In piedi vicino a un muro o a una sedia. Alza un piede e resta in equilibrio sull'altro, sguardo fisso davanti. Più difficile: chiudi gli occhi.",
+            listOf(Pose(rUa = 60f, rFa = 80f, lUa = -20f, lFa = 10f, lTh = 85f, lSh = 0f), Pose(rUa = 65f, rFa = 85f, lUa = -15f, lFa = 15f, lTh = 88f, lSh = -4f)),
+            secs = 30, perSide = true),
+        Move("tallone-punta", "Camminata tallone-punta", listOf("tallone-punta", "tallone punta", "camminata in linea"), setOf("balance", "lowimpact"),
+            "Cammina in linea retta mettendo il tallone di un piede davanti alla punta dell'altro, braccia aperte. Lento, sguardo avanti.",
+            listOf(Pose(rUa = 70f, rFa = 80f, lUa = -70f, lFa = -80f, rTh = 2f, rSh = 2f, lTh = -2f, lSh = -2f), Pose(rUa = 75f, rFa = 85f, lUa = -65f, lFa = -75f, rTh = -1f, rSh = 3f, lTh = 1f, lSh = -3f)),
+            secs = 40, front = true),
+        Move("alzarsi-sedia", "Alzarsi dalla sedia senza mani", listOf("alzarsi dalla sedia", "seduto in piedi", "sit to stand"), setOf("balance", "legs", "strength", "lowimpact"),
+            "Seduto sul bordo della sedia, braccia incrociate sul petto. Alzati senza usare le mani, poi risiediti piano. Allena gambe ed equilibrio.",
+            listOf(Pose(torso = 160f, rUa = -20f, rFa = 150f, lUa = -18f, lFa = 152f, rTh = 90f, rSh = 0f, lTh = 92f, lSh = 2f), Pose(rUa = -20f, rFa = 150f, lUa = -18f, lFa = 152f)),
+            reps = 10, anchor = Anchor.FEET, prop = Prop.SEAT_HIP, equip = setOf("sedia")),
+        Move("punte-appoggio", "Punte con appoggio", listOf("punte con appoggio", "sollevamenti sulle punte con appoggio"), setOf("balance", "legs", "lowimpact"),
+            "In piedi davanti a un muro, mani appoggiate. Sali sulle punte, poi torna sui talloni e solleva un po' le punte. Lento e controllato.",
+            listOf(Pose(torso = 172f, rUa = 95f, rFa = 95f, lUa = 97f, lFa = 97f), Pose(torso = 172f, rUa = 95f, rFa = 95f, lUa = 97f, lFa = 97f, rSh = 4f, lSh = 4f, air = 4f)),
+            reps = 12, prop = Prop.WALL_FRONT),
+
+        // ----- stretching -----
+        Move("petto-muro", "Allungamento del petto al muro", listOf("allungamento del petto", "petto al muro", "pettorali"), setOf("stretch"),
+            "Mano e avambraccio appoggiati a un muro dietro di te, all'altezza della spalla. Ruota piano il busto dall'altra parte finché senti tirare il petto.",
+            listOf(Pose(rUa = -90f, rFa = -90f, lUa = 10f, lFa = 10f), Pose(torso = 175f, rUa = -95f, rFa = -95f, lUa = 15f, lFa = 15f)),
+            secs = 30, perSide = true, prop = Prop.WALL_HAND_BACK),
+        Move("spalla-incrociata", "Allungamento della spalla", listOf("allungamento della spalla", "braccio incrociato"), setOf("stretch", "mobility"),
+            "Porta un braccio teso davanti al petto e tienilo con l'altra mano all'altezza del gomito. Spalla bassa, tieni e cambia.",
+            listOf(Pose(rUa = -80f, rFa = -90f, lUa = 10f, lFa = 70f, rTh = 5f, rSh = 5f, lTh = -5f, lSh = -5f), Pose(rUa = -85f, rFa = -95f, lUa = 12f, lFa = 75f, rTh = 5f, rSh = 5f, lTh = -5f, lSh = -5f)),
+            secs = 30, perSide = true, front = true),
+        Move("tricipite-stretch", "Allungamento del tricipite", listOf("allungamento del tricipite", "tricipite"), setOf("stretch"),
+            "Porta una mano dietro la testa con il gomito in alto. Con l'altra mano spingi piano il gomito: senti tirare dietro il braccio.",
+            listOf(Pose(rUa = 175f, rFa = -10f, lUa = 150f, lFa = 200f), Pose(rUa = 178f, rFa = -15f, lUa = 152f, lFa = 205f)),
+            secs = 30, perSide = true),
+        Move("piriforme", "Allungamento del gluteo (gamba a 4)", listOf("piriforme", "gamba a 4", "figura 4"), setOf("stretch", "back"),
+            "Sdraiato, una caviglia appoggiata sul ginocchio opposto. Porta le gambe verso il petto tirando la coscia di sotto: senti tirare il gluteo.",
+            listOf(Pose(torso = -90f, rUa = 130f, rFa = 160f, lUa = 132f, lFa = 162f, rTh = -165f, rSh = 105f, lTh = 150f, lSh = 70f),
+                Pose(torso = -90f, rUa = 135f, rFa = 165f, lUa = 137f, lFa = 167f, rTh = -155f, rSh = 112f, lTh = 160f, lSh = 80f)),
+            secs = 30, perSide = true, anchor = Anchor.CENTER),
+        Move("torsione", "Torsione da sdraiati", listOf("torsione da sdraiati", "torsione"), setOf("stretch", "back"),
+            "Sdraiato, braccia aperte. Porta le ginocchia piegate da un lato tenendo le spalle a terra, sguardo dalla parte opposta. Respira e cambia.",
+            listOf(Pose(torso = -90f, rUa = -92f, rFa = -92f, lUa = -94f, lFa = -94f, rTh = 150f, rSh = 70f, lTh = 150f, lSh = 70f),
+                Pose(torso = -90f, rUa = -92f, rFa = -92f, lUa = -94f, lFa = -94f, rTh = 120f, rSh = 95f, lTh = 118f, lSh = 93f)),
+            secs = 30, perSide = true, anchor = Anchor.CENTER),
+        Move("farfalla", "Farfalla", listOf("farfalla", "butterfly"), setOf("stretch", "mobility"),
+            "Seduto, piante dei piedi unite e ginocchia aperte. Tieni i piedi con le mani e lascia scendere le ginocchia, schiena dritta.",
+            listOf(Pose(rUa = 15f, rFa = -25f, lUa = -15f, lFa = 25f, rTh = 82f, rSh = -60f, lTh = -82f, lSh = 60f), Pose(rUa = 15f, rFa = -25f, lUa = -15f, lFa = 25f, rTh = 72f, rSh = -66f, lTh = -72f, lSh = 66f)),
+            secs = 30, front = true),
+        Move("polsi", "Mobilità dei polsi", listOf("mobilità dei polsi", "polsi"), setOf("mobility", "warmup"),
+            "Braccia avanti, mani rilassate. Piega i polsi su e giù, poi fai dei cerchi lenti nei due versi. Utile prima di flessioni e plank.",
+            listOf(Pose(rUa = 85f, rFa = 70f, lUa = 87f, lFa = 72f), Pose(rUa = 85f, rFa = 110f, lUa = 87f, lFa = 112f)),
+            reps = 10),
+        Move("caviglie", "Mobilità delle caviglie", listOf("mobilità delle caviglie", "caviglie", "cerchi con la caviglia"), setOf("mobility", "warmup", "balance"),
+            "In piedi su una gamba (appoggiato se serve), l'altra un po' sollevata. Disegna cerchi con la punta del piede, poi cambia verso e gamba.",
+            listOf(Pose(rUa = 60f, rFa = 80f, lUa = -20f, lFa = 10f, lTh = 40f, lSh = 20f), Pose(rUa = 60f, rFa = 80f, lUa = -20f, lFa = 10f, lTh = 40f, lSh = 35f),
+                Pose(rUa = 60f, rFa = 80f, lUa = -20f, lFa = 10f, lTh = 45f, lSh = 30f), Pose(rUa = 60f, rFa = 80f, lUa = -20f, lFa = 10f, lTh = 38f, lSh = 25f)),
+            reps = 10, perSide = true),
+
+        // ----- altri attrezzi -----
+        Move("curl-martello", "Curl a martello", listOf("curl a martello", "hammer curl"), setOf("upper", "strength"),
+            "Come il curl, ma con i palmi rivolti verso le cosce (presa a martello). Gomiti fermi, su e giù senza dondolare.",
+            listOf(Pose(rUa = 2f, rFa = 2f, lUa = 4f, lFa = 4f), Pose(rUa = 6f, rFa = 160f, lUa = 8f, lFa = 162f)),
+            reps = 12, prop = Prop.DUMBBELLS, equip = setOf("manubri")),
+        Move("croci", "Croci a terra con i manubri", listOf("croci", "flyes", "aperture con i manubri"), setOf("upper", "strength"),
+            "Sdraiato, manubri sopra il petto a braccia quasi tese. Apri le braccia di lato fino a sfiorare terra, poi richiudi come in un abbraccio.",
+            listOf(SUPINE_KNEES.copy(rUa = 178f, rFa = 172f, lUa = 180f, lFa = 174f), SUPINE_KNEES.copy(rUa = 100f, rFa = 95f, lUa = -100f, lFa = -95f)),
+            reps = 12, prop = Prop.DUMBBELLS, equip = setOf("manubri")),
+        Move("polpacci-manubri", "Sollevamenti sui polpacci con i manubri", listOf("polpacci con i manubri", "calf raise con manubri"), setOf("legs", "strength"),
+            "Manubri lungo i fianchi. Sali sulle punte più in alto che puoi, tieni un attimo, scendi lento.",
+            listOf(Pose(rUa = 2f, rFa = 2f, lUa = 4f, lFa = 4f), Pose(rUa = 2f, rFa = 2f, lUa = 4f, lFa = 4f, rSh = 4f, lSh = 4f, air = 4f)),
+            reps = 15, prop = Prop.DUMBBELLS, equip = setOf("manubri")),
+        Move("camminata-pesi", "Camminata con i pesi", listOf("camminata con i pesi", "farmer"), setOf("upper", "core", "strength", "cardio"),
+            "Un peso pesante per mano, braccia lungo i fianchi. Cammina dritto a passi corti, spalle basse e pancia stretta.",
+            listOf(Pose(rUa = 2f, rFa = 2f, lUa = 4f, lFa = 4f, rTh = 25f, rSh = 0f, lTh = -15f, lSh = -10f), Pose(rUa = 2f, rFa = 2f, lUa = 4f, lFa = 4f, rTh = -15f, rSh = -10f, lTh = 25f, lSh = 0f)),
+            secs = 40, prop = Prop.DUMBBELLS, equip = setOf("manubri")),
+        Move("halo", "Halo con la kettlebell", listOf("halo"), setOf("upper", "mobility", "core"),
+            "Tieni la kettlebell per le maniglie davanti al petto. Girala intorno alla testa, vicina, in un verso e poi nell'altro. Pancia stretta.",
+            listOf(Pose(rUa = 30f, rFa = -150f, lUa = -30f, lFa = 150f), Pose(rUa = 120f, rFa = -120f, lUa = -60f, lFa = 160f),
+                Pose(rUa = 150f, rFa = -100f, lUa = -150f, lFa = 100f), Pose(rUa = 60f, rFa = -160f, lUa = -120f, lFa = 120f)),
+            reps = 8, front = true, prop = Prop.KETTLEBELL, equip = setOf("kettlebell")),
+        Move("sumo-kb", "Squat sumo con la kettlebell", listOf("squat sumo con la kettlebell", "sumo con kettlebell"), setOf("legs", "strength"),
+            "Gambe larghe, punte in fuori, kettlebell tenuta a braccia tese tra le gambe. Scendi dritto e risali stringendo i glutei.",
+            listOf(Pose(rUa = -12f, rFa = -5f, lUa = 12f, lFa = 5f, rTh = 25f, rSh = 18f, lTh = -25f, lSh = -18f), Pose(rUa = -12f, rFa = -5f, lUa = 12f, lFa = 5f, rTh = 72f, rSh = 12f, lTh = -72f, lSh = -12f)),
+            reps = 12, front = true, prop = Prop.KETTLEBELL, equip = setOf("kettlebell")),
+        Move("petto-elastico", "Aperture del petto con l'elastico", listOf("aperture del petto con l'elastico", "petto elastico"), setOf("upper", "strength", "lowimpact"),
+            "Elastico dietro la schiena, un capo per mano, braccia aperte. Porta le mani avanti e unite davanti al petto, poi riapri lento.",
+            listOf(Pose(rUa = 92f, rFa = 92f, lUa = -92f, lFa = -92f, rTh = 5f, rSh = 5f, lTh = -5f, lSh = -5f), Pose(rUa = 55f, rFa = -60f, lUa = -55f, lFa = 60f, rTh = 5f, rSh = 5f, lTh = -5f, lSh = -5f)),
+            reps = 15, front = true, prop = Prop.BAND_HANDS, equip = setOf("elastico")),
+        Move("buongiorno-elastico", "Piegamento dalle anche con l'elastico", listOf("piegamento dalle anche con l'elastico", "good morning con l'elastico"), setOf("legs", "back", "strength"),
+            "Elastico sotto i piedi e dietro il collo (o tenuto alle spalle). Porta il bacino indietro con la schiena dritta, poi risali spingendo coi fianchi.",
+            listOf(Pose(rUa = -20f, rFa = 150f, lUa = -18f, lFa = 152f), Pose(torso = 105f, rUa = -20f, rFa = 150f, lUa = -18f, lFa = 152f, rTh = -12f, rSh = 0f, lTh = -10f, lSh = 2f)),
+            reps = 12, armsFollow = true, prop = Prop.BAND_FEET, equip = setOf("elastico")),
+        Move("glutei-elastico", "Slanci indietro con l'elastico", listOf("slanci indietro con l'elastico", "kickback elastico"), setOf("legs", "strength", "lowimpact"),
+            "Elastico intorno alle caviglie, mani su un muro o una sedia. Porta una gamba tesa indietro stringendo il gluteo, senza inarcare la schiena.",
+            listOf(Pose(torso = 170f, rUa = 95f, rFa = 95f, lUa = 97f, lFa = 97f, rTh = -2f, rSh = -2f), Pose(torso = 165f, rUa = 95f, rFa = 95f, lUa = 97f, lFa = 97f, rTh = -40f, rSh = -38f)),
+            reps = 15, perSide = true, prop = Prop.BAND_KNEES, equip = setOf("elastico")),
+        Move("crunch-palla", "Crunch sulla fitball", listOf("crunch sulla fitball", "crunch sulla palla"), setOf("core", "strength"),
+            "Sdraiato con la parte bassa della schiena sulla palla, piedi a terra larghi. Sali con le spalle stringendo la pancia, poi torna giù lento.",
+            listOf(Pose(torso = -100f, rUa = 150f, rFa = -60f, lUa = 152f, lFa = -58f, rTh = 90f, rSh = 0f, lTh = 92f, lSh = 2f),
+                Pose(torso = -130f, head = 15f, rUa = 150f, rFa = -60f, lUa = 152f, lFa = -58f, rTh = 90f, rSh = 0f, lTh = 92f, lSh = 2f)),
+            reps = 15, prop = Prop.BALL_BACK, equip = setOf("palla")),
+        Move("ponte-palla", "Ponte con i piedi sulla fitball", listOf("ponte con i piedi sulla fitball", "ponte sulla palla"), setOf("legs", "core", "strength"),
+            "Sdraiato, talloni sulla palla, braccia a terra. Solleva il bacino fino a fare una linea spalle-piedi, tieni la palla ferma e scendi.",
+            listOf(Pose(torso = -90f, rUa = 90f, rFa = 90f, lUa = 92f, lFa = 92f, rTh = 160f, rSh = 120f, lTh = 162f, lSh = 122f),
+                Pose(torso = -70f, rUa = 90f, rFa = 90f, lUa = 92f, lFa = 92f, rTh = 140f, rSh = 110f, lTh = 142f, lSh = 112f)),
+            reps = 12, minLevel = 2, prop = Prop.BALL_FEET, equip = setOf("palla")),
+
+        // ----- respiro -----
+        Move("respiro", "Respirazione lenta", listOf("respirazione", "respiro"), setOf("breath", "stretch"),
+            "In piedi o seduto, spalle rilassate. Inspira dal naso per 4 secondi gonfiando la pancia, espira dalla bocca per 6 secondi. Il cuore rallenta.",
+            listOf(Pose(rUa = 4f, rFa = 4f, lUa = 6f, lFa = 6f), Pose(head = 6f, rUa = 30f, rFa = 30f, lUa = 32f, lFa = 32f)),
+            secs = 60),
     )
 
     private val byId = ALL.associateBy { it.id }
-    fun byId(id: String) = byId[id]
+    fun byId(id: String) = byId[id] ?: custom.firstOrNull { it.id == id }
+
+    /** Esercizi creati con l'AI e salvati dalla persona: si aggiungono al catalogo. */
+    @Volatile var custom: List<Move> = emptyList(); private set
+    fun setCustom(l: List<Move>) { custom = l; keyIndex = buildIndex() }
+    /** Tutti gli esercizi: quelli dell'app più quelli creati con l'AI. */
+    fun every(): List<Move> = ALL + custom
 
     fun norm(s: String): String = Normalizer.normalize(s.lowercase(), Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "").replace('’', '\'')
 
-    private val keyIndex: List<Pair<String, Move>> = ALL.flatMap { m -> (m.keys + m.name).map { norm(it) to m } }.sortedByDescending { it.first.length }
+    private fun buildIndex(): List<Pair<String, Move>> = (ALL + custom).flatMap { m -> (m.keys + m.name).map { norm(it) to m } }.filter { it.first.isNotBlank() }.sortedByDescending { it.first.length }
+    @Volatile private var keyIndex: List<Pair<String, Move>> = buildIndex()
 
     /** L'esercizio del catalogo che corrisponde a un nome scritto a mano («Plank laterale (per lato)» → plank laterale). Vince la parola più lunga. */
     fun find(name: String): Move? { val n = norm(name); return keyIndex.firstOrNull { n.contains(it.first) }?.second }
@@ -591,6 +908,7 @@ object Moves {
         CORE("Addominali e core", "🎯", "Plank, crunch, dead bug…"),
         CARDIO("Cardio a casa", "❤️", "A intervalli, per il fiato"),
         BACK("Schiena sana", "🌿", "Rinforzo e allungamento della schiena"),
+        BALANCE("Equilibrio", "🧍", "Stabilità e prevenzione delle cadute"),
     }
     val LEVELS = listOf("Principiante", "Intermedio", "Avanzato")
 
@@ -616,8 +934,9 @@ object Moves {
             Goal.CORE -> { m -> "core" in m.tags }
             Goal.CARDIO -> { m -> "cardio" in m.tags || m.id in setOf("squat", "affondi", "scalatore") }
             Goal.BACK -> { m -> "back" in m.tags }
+            Goal.BALANCE -> { m -> "balance" in m.tags || m.id in setOf("ponte", "bird-dog", "squat", "flessioni-muro") }
         }
-        return ALL.filter { want(it) && ok(it) }
+        return every().filter { want(it) && ok(it) }
     }
 
     /** Se con queste scelte non resta niente (poco spazio, niente attrezzi…), si allarga un po' la scelta: prima altri livelli, poi altri tipi. */
@@ -692,6 +1011,8 @@ object Moves {
                 var i = 0
                 while (fixed + secs(body) < target - 60 && body.isNotEmpty() && i < 30) { val k = i % body.size; body[k] = body[k].copy(sets = body[k].sets + (if (body[k].name.endsWith("(per lato)")) 2 else 1)); i++ }
                 out += warm; out += body; out += cool
+                // a fine allenamento un minuto di respirazione lenta per calmare il battito
+                if (minutes >= 15) byId("respiro")?.let { out += Ex(it.name, 1, 0, 0, seconds = 60) }
             }
         }
         return WorkoutPlan(Fitness.newPlanId(), "${goal.emoji} ${goal.label} · $minutes min · ${LEVELS[lv].lowercase()}", out)

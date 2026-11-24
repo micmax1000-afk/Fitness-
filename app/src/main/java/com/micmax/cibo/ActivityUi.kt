@@ -227,13 +227,14 @@ fun MainActivity.openTrain() {
             sectionLabel(body, "IL TUO COACH")
             val cp = CoachStore.plan(this)
             listRow(body, "🎯", "Coach", if (cp == null) "Un programma per te, che si adatta a come va: scegli obiettivo e giorni" else "${Coach.GOALS[cp.goal]?.first} · ${cp.days} giorni a settimana · livello ${Moves.LEVELS[Coach.level(cp)].lowercase()}") { openCoach() }
-            listRow(body, "💬", "Scrivi al coach", "Chat con l'AI (Gemini, Groq o NVIDIA, con la tua chiave)") { openCoachChat() }
+            listRow(body, "💬", "Scrivi al coach", "Chat con l'AI (Gemini o Groq, con la tua chiave)") { openCoachChat() }
             sectionLabel(body, "ALLENATI")
             listRow(body, "⏱", "Contro il tempo", "Giri da finire il prima possibile, con il tuo record") { openChallenges() }
             listRow(body, "✨", "Crea una scheda", "Stretching, mobilità, gambe, addominali, cardio…: scegli tempo e livello") { openGenerator() }
             listRow(body, "🏋️", "Schede", "Serie, ripetizioni, riposo con cronometro e voce") { openPlans() }
             listRow(body, "📖", "Esercizi", "Come si fanno, con il disegno animato") { openMoves() }
             listRow(body, "⏱", "Tabata e intervalli", "Lavoro e riposo a tempo, con bip e voce") { openTabata() }
+            listRow(body, "😌", "Respirazione guidata", "2 minuti per calmarti: inspira 4 secondi, espira 6") { Moves.byId("respiro")?.let { m -> runPlan(WorkoutPlan(Fitness.newPlanId(), "Respirazione", listOf(Ex(m.name, 1, 0, 0, seconds = 120)))) } }
             listRow(body, "📝", "Ho fatto un allenamento", "Aggiungilo a mano: corsa, nuoto, palestra…") { addActDialog { render() } }
             sectionLabel(body, "STORICO")
             listRow(body, "📅", "Allenamenti fatti", "${Fitness.acts(this).size} registrati · anche quelli dell'orologio") { openActs() }
@@ -407,7 +408,8 @@ fun MainActivity.runPlan(plan: WorkoutPlan, coach: Boolean = false) {
                 timer?.cancel(); finished = true
                 val min = ((System.currentTimeMillis() - started) / 60000).toInt().coerceAtLeast(1)
                 val kcal = Fitness.kcalForSession(Food.profile(this).weightKg, min)
-                Fitness.addAct(this, Act(UUID.randomUUID().toString(), "plan", "🏋️ ${plan.name}", started, min, 0.0, kcal))
+                // la sola respirazione non conta come allenamento
+                if (exs.any { Moves.find(it.name)?.id != "respiro" }) Fitness.addAct(this, Act(UUID.randomUUID().toString(), "plan", "🏋️ ${plan.name}", started, min, 0.0, kcal))
                 body.addView(iconBox("🏅", 110).apply { (layoutParams as LinearLayout.LayoutParams).apply { gravity = Gravity.CENTER_HORIZONTAL; topMargin = dp(28) } })
                 body.addView(big("Scheda completata!", 26f)); body.addView(note("Ottimo lavoro: registrato negli allenamenti della settimana."))
                 confetti()
@@ -421,7 +423,7 @@ fun MainActivity.runPlan(plan: WorkoutPlan, coach: Boolean = false) {
                 body.addView(big(e.name, 26f))
                 val move = Moves.find(e.name)
                 val repMs = (Moves.repSeconds(move, tempo) * 1000).toLong()
-                val mv = move?.let { m -> moveView(m, 170).apply { setOnClickListener { showMove(m) }; if (auto && e.seconds == 0) frameMs = repMs / 2f } }
+                val mv = move?.takeIf { it.id != "respiro" }?.let { m -> moveView(m, 170).apply { setOnClickListener { showMove(m) }; if (auto && e.seconds == 0) frameMs = repMs / 2f } }
                 mv?.let { body.addView(it) }
                 body.addView(big("Serie ${setI + 1} di ${e.sets}", 18f, col(R.color.muted)))
                 if (e.kg > 0) body.addView(big("${if (e.kg % 1.0 == 0.0) e.kg.toInt() else e.kg} kg", 16f, col(R.color.muted)))
@@ -454,7 +456,18 @@ fun MainActivity.runPlan(plan: WorkoutPlan, coach: Boolean = false) {
                     }, LinearLayout.LayoutParams(dp(130), -2))
                     step("+", 0.1)
                 }
-                if (auto) {
+                if (move?.id == "respiro" && e.seconds > 0) {
+                    // respirazione guidata: il cerchio si allarga e si stringe, la voce dice inspira / espira
+                    val clock = big(Fitness.clock(e.seconds), 18f, col(R.color.muted))
+                    body.addView(BreathView(this) { inhale -> if (voice) say(if (inhale) "Inspira" else "Espira") }, LinearLayout.LayoutParams(-1, dp(240)).apply { setMargins(0, dp(6), 0, dp(6)) })
+                    body.addView(clock)
+                    timer?.cancel()
+                    timer = object : CountDownTimer(e.seconds * 1000L, 500) {
+                        override fun onTick(ms: Long) { clock.text = Fitness.clock(((ms + 999) / 1000).toInt()) }
+                        override fun onFinish() { beep(true); nextSet() }
+                    }.start()
+                    body.addView(btn("Fatto ✓", secondary = true) { timer?.cancel(); nextSet() })
+                } else if (auto) {
                     // conto automatico: «pronti», 3-2-1, poi una ripetizione ogni [repMs] (o il cronometro); alla fine riposo da solo
                     val counter = big(if (e.seconds > 0) "${e.seconds}" else "0 / ${e.reps}", if (e.seconds > 0) 80f else 72f, col(R.color.accent)); body.addView(counter)
                     val status = note("Pronti…"); body.addView(status)

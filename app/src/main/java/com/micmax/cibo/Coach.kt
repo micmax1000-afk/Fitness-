@@ -97,7 +97,7 @@ object Coach {
         "dimagrire" to ("Dimagrire" to listOf(Moves.Goal.CARDIO, Moves.Goal.FULL, Moves.Goal.CARDIO, Moves.Goal.LEGS, Moves.Goal.CORE)),
         "forza" to ("Più forza" to listOf(Moves.Goal.LEGS, Moves.Goal.UPPER, Moves.Goal.CORE, Moves.Goal.FULL)),
         "resistenza" to ("Più fiato e resistenza" to listOf(Moves.Goal.CARDIO, Moves.Goal.FULL, Moves.Goal.CARDIO, Moves.Goal.LEGS)),
-        "benessere" to ("Stare bene e sciolto" to listOf(Moves.Goal.MOBILITY, Moves.Goal.BACK, Moves.Goal.STRETCH, Moves.Goal.CORE)),
+        "benessere" to ("Stare bene e sciolto" to listOf(Moves.Goal.MOBILITY, Moves.Goal.BACK, Moves.Goal.BALANCE, Moves.Goal.STRETCH, Moves.Goal.CORE)),
     )
 
     /** In quali giorni della settimana allenarsi (lunedì = 0), ben distanziati. */
@@ -139,17 +139,17 @@ object Coach {
     fun level(p: CoachPlan) = p.level.roundToInt().coerceIn(0, 2)
 
     /** Gli adattamenti per te: (livello massimo, niente salti, spiegazioni da mostrare). */
-    data class Personal(val maxLevel: Int, val noJumps: Boolean, val notes: List<String>)
+    data class Personal(val maxLevel: Int, val noJumps: Boolean, val notes: List<String>, val balance: Boolean = false)
     fun personal(b: Body): Personal {
         var max = 2; var noJumps = false; val notes = mutableListOf<String>()
         b.age?.let { a ->
-            if (a >= 65) { max = minOf(max, 1); noJumps = true; notes += "Età: più equilibrio e mobilità, niente salti" }
+            if (a >= 65) { max = minOf(max, 1); noJumps = true; notes += "Età: ogni giorno un esercizio di equilibrio, niente salti" }
             else if (a >= 50) notes += "Età: riscaldamento e allungamenti sempre presenti"
         }
         b.bmi?.let { if (it >= 30) { noJumps = true; notes += "Peso: niente salti per proteggere le ginocchia, più cardio leggero" } else if (it < 18.5) notes += "Peso basso: più forza, poco cardio intenso" }
         b.avgSteps?.let { if (it in 1.0..3999.0) { max = minOf(max, 1); notes += "Ti muovi poco durante il giorno: si parte con calma" } }
         b.restHr?.let { if (it >= 85) { max = minOf(max, 1); notes += "Battito a riposo alto: intensità moderata (sentire il medico se resta così)" } }
-        return Personal(max, noJumps, notes)
+        return Personal(max, noJumps, notes, balance = (b.age ?: 0) >= 65)
     }
 
     /** Le scelte di attrezzi, spazio, silenzio e parti da proteggere, unite agli adattamenti per te. */
@@ -175,19 +175,33 @@ object Coach {
         if (Tweak.HARD in tweaks) { lv = (lv + 1).coerceAtMost(2); min += 5 }
         val base = opts(p, pers)
         val o = base.copy(noJumps = base.noJumps || Tweak.NO_JUMP in tweaks || Tweak.BACK in tweaks, avoid = if (Tweak.BACK in tweaks) base.avoid + "schiena" else base.avoid)
-        val plan = Moves.generate(goal, min, lv, seed, opts = o)
+        var plan = Moves.generate(goal, min, lv, seed, opts = o)
+        // dai 65 anni: un esercizio di equilibrio dopo il riscaldamento (per prevenire le cadute)
+        if (pers?.balance == true && goal != Moves.Goal.BALANCE) {
+            Moves.ALL.filter { "balance" in it.tags && Moves.allowed(it, o) }.shuffled(kotlin.random.Random(seed)).firstOrNull()?.let { m ->
+                val ex = Moves.toEx(m, 0, 1, 15, holdSecs = if (m.timed) 30 else null)
+                plan = plan.copy(exercises = plan.exercises.toMutableList().apply { add(minOf(2, size), ex) })
+            }
+        }
         return plan.copy(name = "🤖 Coach · " + plan.name.substringAfter(' '))
     }
 
     // ======================= la chat con l'AI =======================
 
     /** I servizi che si possono usare: tutti parlano lo stesso «dialetto» (chat completions). */
-    data class Provider(val id: String, val label: String, val url: String, val model: String, val keyHint: String)
+    data class Provider(val id: String, val label: String, val url: String, val model: String, val keyHint: String, val modelsUrl: String)
     val PROVIDERS = listOf(
-        Provider("groq", "Groq", "https://api.groq.com/openai/v1/chat/completions", "llama-3.3-70b-versatile", "gsk_…"),
-        Provider("gemini", "Google Gemini", "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", "gemini-2.5-flash", "AIza…"),
-        Provider("nvidia", "NVIDIA", "https://integrate.api.nvidia.com/v1/chat/completions", "meta/llama-3.3-70b-instruct", "nvapi-…"),
+        Provider("groq", "Groq", "https://api.groq.com/openai/v1/chat/completions", "llama-3.3-70b-versatile", "gsk_…", "https://api.groq.com/openai/v1/models"),
+        Provider("gemini", "Google Gemini", "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", "gemini-2.5-flash", "AIza…", "https://generativelanguage.googleapis.com/v1beta/openai/models"),
     )
+
+    /** I modelli che il servizio offre con la tua chiave (solo quelli per scrivere: niente voce, immagini, embedding…). */
+    fun parseModels(json: String): List<String> = runCatching {
+        val arr = JSONObject(json).getJSONArray("data")
+        (0 until arr.length()).mapNotNull { arr.optJSONObject(it)?.optString("id")?.removePrefix("models/")?.takeIf { id -> id.isNotBlank() } }
+    }.getOrDefault(emptyList())
+        .filter { id -> listOf("whisper", "tts", "embed", "guard", "aqa", "imagen", "veo", "image", "audio", "speech", "transcribe", "orpheus", "live").none { it in id.lowercase() } }
+        .distinct().sorted()
 
     /** Le istruzioni per il modello: allenatore prudente, in italiano, e la scheda in un formato che l'app sa leggere. */
     fun systemPrompt(context: String): String = """
@@ -293,4 +307,70 @@ ${if (extra.isNotBlank()) "Richieste della persona: $extra\n" else ""}Rispondi c
 
     /** Il testo da mostrare, senza il blocco della scheda (la scheda si mostra a parte). */
     fun withoutPlan(text: String): String = text.replace(Regex("```(?:json)?\\s*\\{[\\s\\S]*?\\}\\s*```"), "").trim()
+
+    // ======================= esercizi creati dall'AI =======================
+
+    private val TAGS = setOf("legs", "upper", "core", "cardio", "stretch", "mobility", "back", "balance", "warmup")
+
+    /** La richiesta per un esercizio nuovo: testi in italiano e le pose dell'omino con gli angoli. */
+    fun exerciseRequest(description: String, equipment: Collection<String>): String = """
+Crea UN esercizio nuovo per l'app, diverso da questi che esistono già: ${Moves.every().joinToString(", ") { it.name }}.
+Richiesta della persona: «$description».
+Attrezzi che ha: ${equipment.joinToString(", ").ifBlank { "nessuno" }}. Usa solo questi (o nessuno).
+
+Il disegno è un omino stilizzato. Ogni posa ha angoli in gradi ASSOLUTI: 0 = verso il basso, 90 = in avanti (verso destra), 180 = in alto, -90 = indietro.
+"torso" = direzione dal bacino al collo (in piedi = 180, sdraiato a pancia in su con la testa a sinistra = -90, plank = 100-115).
+"rUa","rFa" = braccio vicino (parte alta, avambraccio); "lUa","lFa" = braccio lontano; "rTh","rSh" = coscia e stinco vicini; "lTh","lSh" = lontani.
+"head" = testa rispetto al busto (0 dritta), "arch" = curva della schiena (-6..6), "air" = quanto è staccato da terra nei salti (0..15).
+In piedi con le braccia lungo i fianchi: tutto 0 tranne "torso": 180. Esempi:
+squat in basso {"torso":145,"rUa":90,"rFa":90,"lUa":92,"lFa":92,"rTh":82,"rSh":-18,"lTh":84,"lSh":-16}
+plank a braccia tese {"torso":115,"rUa":0,"rFa":0,"lUa":5,"lFa":5,"rTh":-65,"rSh":-65,"lTh":-63,"lSh":-63}
+sdraiato sulla schiena, ginocchia piegate {"torso":-90,"rUa":90,"rFa":90,"lUa":92,"lFa":92,"rTh":135,"rSh":35,"lTh":138,"lSh":38}
+Con "vista":"fronte" l'omino è visto di fronte: braccio e gamba "r" a destra (angoli positivi = verso l'esterno), "l" a sinistra (angoli negativi = verso l'esterno).
+Dai da 2 a 4 pose: l'animazione passa dall'una all'altra.
+
+Rispondi SOLO con questo JSON:
+```json
+{"nome": "…", "descrizione": "due frasi su come si fa", "passi": ["…"], "errori": ["…"], "respiro": "…", "consiglio": "frase brevissima detta a voce", "attenzione": "…",
+ "muscoli": ["…"], "muscoli_secondari": ["…"], "attrezzi": [], "tipo": ["legs"], "livello": 1, "ripetizioni": 12, "secondi": 0, "per_lato": false, "salti": false, "spazio": 1,
+ "vista": "profilo", "pose": [{"torso": 180}, {"torso": 145}]}
+```
+Muscoli possibili: ${MoveInfos.MUSCLES.keys.joinToString(", ")}. Attrezzi possibili: ${MoveInfos.EQUIPMENT.keys.joinToString(", ")}. Tipi: ${TAGS.joinToString(", ")}.
+"spazio": 0 = basta un metro, 1 = un tappetino, 2 = una stanza. Per un esercizio a tempo "ripetizioni": 0 e "secondi" > 0.
+""".trim()
+
+    /** L'esercizio nella risposta dell'AI, controllato e tenuto in limiti sensati. null se non si legge. */
+    fun parseExercise(text: String, id: String): Pair<Move, MoveInfo>? {
+        val start = text.indexOf('{'); val end = text.lastIndexOf('}')
+        if (start < 0 || end <= start) return null
+        val o = runCatching { JSONObject(text.substring(start, end + 1)) }.getOrNull() ?: return null
+        val name = o.optString("nome").trim().take(50).takeIf { it.length >= 3 } ?: return null
+        fun strings(k: String, max: Int = 6) = o.optJSONArray(k)?.let { a -> (0 until a.length()).mapNotNull { a.optString(it).trim().takeIf { t -> t.isNotBlank() }?.take(160) } }.orEmpty().take(max)
+        fun ang(p: JSONObject, k: String, def: Float) = p.optDouble(k, def.toDouble()).toFloat().takeIf { it.isFinite() }?.coerceIn(-400f, 400f) ?: def
+        val posesJson = o.optJSONArray("pose") ?: return null
+        val poses = (0 until minOf(posesJson.length(), 6)).mapNotNull { i ->
+            val p = posesJson.optJSONObject(i) ?: return@mapNotNull null
+            Pose(ang(p, "torso", 180f), ang(p, "head", 0f).coerceIn(-60f, 60f), ang(p, "arch", 0f).coerceIn(-8f, 8f),
+                ang(p, "rUa", 0f), ang(p, "rFa", 0f), ang(p, "lUa", 0f), ang(p, "lFa", 0f),
+                ang(p, "rTh", 0f), ang(p, "rSh", 0f), ang(p, "lTh", 0f), ang(p, "lSh", 0f), ang(p, "air", 0f).coerceIn(0f, 20f))
+        }
+        if (poses.size < 2) return null
+        val equip = strings("attrezzi").filter { it in MoveInfos.EQUIPMENT }.toSet()
+        val jumps = o.optBoolean("salti", false)
+        var tags = strings("tipo", 4).filter { it in TAGS }.toSet().ifEmpty { setOf("core") }
+        if (tags.any { it in setOf("legs", "upper", "core") }) tags = tags + "strength"
+        if (jumps) tags = tags + "jump"
+        val secs = o.optInt("secondi", 0).coerceIn(0, 300)
+        val reps = if (secs > 0) 0 else o.optInt("ripetizioni", 12).coerceIn(1, 60)
+        val level = o.optInt("livello", 1).coerceIn(1, 3)
+        val prop = when { "sbarra" in equip -> Prop.BAR; "manubri" in equip -> Prop.DUMBBELLS; "kettlebell" in equip -> Prop.KETTLEBELL; "corda" in equip -> Prop.ROPE; "elastico" in equip -> Prop.BAND_FEET; else -> Prop.NONE }
+        val how = o.optString("descrizione").trim().take(300).ifBlank { strings("passi").joinToString(" ") }
+        val move = Move(id, name, listOf(name.lowercase()), tags, how, poses, reps = reps, secs = secs, perSide = o.optBoolean("per_lato", false),
+            minLevel = level, front = o.optString("vista").contains("front"), anchor = if (prop == Prop.BAR) Anchor.HANDS else Anchor.CENTER, prop = prop, equip = equip)
+        val info = MoveInfo(name, null, strings("muscoli").filter { it in MoveInfos.MUSCLES }.toSet().ifEmpty { setOf("addome") },
+            strings("muscoli_secondari").filter { it in MoveInfos.MUSCLES }.toSet(), o.optInt("spazio", 1).coerceIn(0, 2),
+            if (jumps) setOf("ginocchia") else emptySet(), null, null, strings("passi").ifEmpty { listOf(how) }, strings("errori"),
+            o.optString("respiro").trim().take(120).ifBlank { "Respira regolare." }, o.optString("consiglio").trim().take(60), o.optString("attenzione").trim().take(200))
+        return move to info
+    }
 }

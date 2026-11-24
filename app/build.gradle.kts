@@ -12,7 +12,7 @@ android {
         minSdk = 26
         targetSdk = 34
         versionCode = System.getenv("CIBO_VERSION_CODE")?.toIntOrNull() ?: 1
-        versionName = "1.4.0"
+        versionName = "1.6.0"
         resourceConfigurations += listOf("it", "en")
     }
 

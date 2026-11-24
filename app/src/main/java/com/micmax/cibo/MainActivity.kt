@@ -118,6 +118,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         AppCompatDelegate.setDefaultNightMode(themeMode())
         super.onCreate(savedInstanceState)
+        CustomMoves.load(this)   // gli esercizi creati con l'AI entrano nel catalogo
         host = FrameLayout(this).apply { setBackgroundColor(col(R.color.bg)) }
         setContentView(host)
         push(buildHome())
