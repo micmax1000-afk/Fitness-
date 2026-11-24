@@ -20,7 +20,7 @@ App Android per il cibo, la cucina e la salute: i dati restano sul telefono. L'u
 - **Su misura**: test di forma guidato (flessioni, squat, plank, battito), età, peso, passi e battito a riposo adattano livello e esercizi; attrezzi che hai (manubri, kettlebell, elastico, corda, sbarra, sedia), spazio in casa, modalità silenziosa e parti del corpo da proteggere; programma di 4 settimane fatto con l'AI
 - **Scheda completa di ogni esercizio**: passi, errori da evitare, respirazione, consiglio detto a voce, muscoli lavorati sulla sagoma, varianti più facile e più difficile (si cambiano anche durante la scheda), foto libere di free-exercise-db (pubblico dominio) e ricerca del video su MuscleWiki
 - **Contro il tempo**: allenamenti a giri da finire il prima possibile, con record personale
-- **Esercizi con il disegno**: oltre 40 esercizi con l'omino animato che mostra il movimento e la spiegazione; il disegno compare anche durante la scheda
+- **Esercizi con il disegno**: 89 esercizi (31 con manubri, kettlebell, elastico, corda, sbarra o sedia) con l'omino animato che mostra il movimento e la spiegazione; il disegno compare anche durante la scheda
 - **Home «Oggi»** con tre anelli (calorie, acqua, passi), sonno, allenamenti della settimana e farmaci da prendere
 - **Tema** chiaro, scuro o come il telefono; icone disegnate dall'app, uguali su tutti i telefoni
 - **Esporta / Importa**: un file con tutto. «Importa» legge anche i dati di Web Launcher (stessi nomi dei campi)
