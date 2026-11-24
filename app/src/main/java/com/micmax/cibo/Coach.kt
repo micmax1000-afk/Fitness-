@@ -51,7 +51,41 @@ object Challenges {
 data class CoachPlan(
     val goal: String = "forma", val days: Int = 3, val minutes: Int = 20, val level: Double = 0.0,
     val noJumps: Boolean = false, val startDay: Long = LocalDate.now().toEpochDay(),
+    /** Attrezzi che hai (null nei programmi salvati prima: nessuno). */
+    val equip: List<String>? = null,
+    /** Spazio: 0 = una stanza, 1 = un tappetino, 2 = pochissimo. */
+    val space: Int = 0,
+    /** Niente salti né rumore. */
+    val quiet: Boolean = false,
+    /** Parti del corpo da non caricare: ginocchia, schiena, spalle, polsi. */
+    val avoid: List<String>? = null,
 )
+
+/** Quello che l'app sa di te per adattare il programma (null = non si sa). */
+data class Body(val age: Int? = null, val sex: String? = null, val bmi: Double? = null, val avgSteps: Double? = null, val restHr: Int? = null)
+
+/** Il test di forma: flessioni in un minuto, squat in un minuto, plank più lungo possibile, battito a riposo. */
+data class FitResult(val date: Long, val pushups: Int, val squats: Int, val plankSec: Int, val restHr: Int? = null)
+
+object FitTest {
+    /** Le soglie si abbassano con l'età; le flessioni anche per le donne (dove di solito si parte più bassi). */
+    private fun ageFactor(age: Int?) = when { age == null -> 1.0; age >= 65 -> 0.6; age >= 50 -> 0.75; age >= 40 -> 0.9; else -> 1.0 }
+    private fun lvl(v: Int, lo: Double, hi: Double) = when { v < lo -> 0; v < hi -> 1; else -> 2 }
+
+    /** Livello (0..2) per parte alta, gambe e addominali, e quello generale. */
+    fun levels(r: FitResult, b: Body): Map<String, Int> {
+        val a = ageFactor(b.age); val f = if (b.sex == "f") 0.6 else 1.0
+        val upper = lvl(r.pushups, 10 * a * f, 25 * a * f)
+        val legs = lvl(r.squats, 25 * a, 40 * a)
+        val core = lvl(r.plankSec, 30 * a, 75 * a)
+        return mapOf("upper" to upper, "legs" to legs, "core" to core, "overall" to Math.round((upper + legs + core) / 3.0).toInt())
+    }
+
+    /** Confronto con il test precedente: «+5 flessioni», «−3 squat»… */
+    fun progress(old: FitResult, new: FitResult): List<String> = listOf(
+        "flessioni" to (new.pushups - old.pushups), "squat" to (new.squats - old.squats), "secondi di plank" to (new.plankSec - old.plankSec),
+    ).filter { it.second != 0 }.map { (n, d) -> (if (d > 0) "+$d" else "−${-d}") + " $n" }
+}
 
 /** Una giornata del programma. [goal] null = riposo; [challenge] = giorno «contro il tempo». */
 data class CoachDay(val date: LocalDate, val goal: Moves.Goal?, val minutes: Int, val challenge: ForTime? = null, val note: String = "")
@@ -104,6 +138,26 @@ object Coach {
 
     fun level(p: CoachPlan) = p.level.roundToInt().coerceIn(0, 2)
 
+    /** Gli adattamenti per te: (livello massimo, niente salti, spiegazioni da mostrare). */
+    data class Personal(val maxLevel: Int, val noJumps: Boolean, val notes: List<String>)
+    fun personal(b: Body): Personal {
+        var max = 2; var noJumps = false; val notes = mutableListOf<String>()
+        b.age?.let { a ->
+            if (a >= 65) { max = minOf(max, 1); noJumps = true; notes += "Età: più equilibrio e mobilità, niente salti" }
+            else if (a >= 50) notes += "Età: riscaldamento e allungamenti sempre presenti"
+        }
+        b.bmi?.let { if (it >= 30) { noJumps = true; notes += "Peso: niente salti per proteggere le ginocchia, più cardio leggero" } else if (it < 18.5) notes += "Peso basso: più forza, poco cardio intenso" }
+        b.avgSteps?.let { if (it in 1.0..3999.0) { max = minOf(max, 1); notes += "Ti muovi poco durante il giorno: si parte con calma" } }
+        b.restHr?.let { if (it >= 85) { max = minOf(max, 1); notes += "Battito a riposo alto: intensità moderata (sentire il medico se resta così)" } }
+        return Personal(max, noJumps, notes)
+    }
+
+    /** Le scelte di attrezzi, spazio, silenzio e parti da proteggere, unite agli adattamenti per te. */
+    fun opts(p: CoachPlan, pers: Personal? = null) = Moves.Opts(
+        noJumps = p.noJumps || p.quiet || pers?.noJumps == true, equip = p.equip.orEmpty().toSet(),
+        spaceCap = when (p.space) { 2 -> 0; 1 -> 1; else -> 2 }, avoid = p.avoid.orEmpty().toSet(),
+    )
+
     /** Dopo un allenamento: «Facile» alza il livello, «Difficile» lo abbassa (a piccoli passi). */
     fun feedback(p: CoachPlan, answer: Int): CoachPlan = p.copy(level = (p.level + when (answer) { 0 -> 0.34; 2 -> -0.34; else -> 0.0 }).coerceIn(0.0, 2.0))
 
@@ -111,15 +165,17 @@ object Coach {
     enum class Tweak(val label: String) { SHORT("⏱ Ho poco tempo"), BACK("🌿 Mi fa male la schiena"), NO_JUMP("🔇 Niente salti"), TIRED("😴 Sono stanco"), HARD("🔥 Voglio spingere") }
 
     /** La scheda di oggi, con le richieste veloci e il sonno della notte (meno di 6 ore = più leggera). */
-    fun todayPlan(p: CoachPlan, day: CoachDay, tweaks: Set<Tweak>, sleepHours: Double?, seed: Long): WorkoutPlan {
+    fun todayPlan(p: CoachPlan, day: CoachDay, tweaks: Set<Tweak>, sleepHours: Double?, seed: Long, pers: Personal? = null): WorkoutPlan {
         var goal = day.goal ?: Moves.Goal.MOBILITY
         var min = if (day.goal == null) 10 else day.minutes
-        var lv = level(p)
+        var lv = minOf(level(p), pers?.maxLevel ?: 2)
         if (Tweak.SHORT in tweaks) min = minOf(min, 10)
         if (Tweak.BACK in tweaks) { goal = Moves.Goal.BACK; lv = 0 }
         if (Tweak.TIRED in tweaks || (sleepHours != null && sleepHours < 6)) { lv = (lv - 1).coerceAtLeast(0); if (goal == Moves.Goal.CARDIO) goal = Moves.Goal.MOBILITY; min = minOf(min, 15) }
         if (Tweak.HARD in tweaks) { lv = (lv + 1).coerceAtMost(2); min += 5 }
-        val plan = Moves.generate(goal, min, lv, seed, noJumps = p.noJumps || Tweak.NO_JUMP in tweaks || Tweak.BACK in tweaks)
+        val base = opts(p, pers)
+        val o = base.copy(noJumps = base.noJumps || Tweak.NO_JUMP in tweaks || Tweak.BACK in tweaks, avoid = if (Tweak.BACK in tweaks) base.avoid + "schiena" else base.avoid)
+        val plan = Moves.generate(goal, min, lv, seed, opts = o)
         return plan.copy(name = "🤖 Coach · " + plan.name.substringAfter(' '))
     }
 
@@ -148,8 +204,8 @@ $context
 """.trim()
 
     /** Il corpo della richiesta: istruzioni, gli ultimi messaggi, la domanda. */
-    fun request(model: String, system: String, history: List<Pair<String, String>>): String = JSONObject().apply {
-        put("model", model); put("temperature", 0.6); put("max_tokens", 900)
+    fun request(model: String, system: String, history: List<Pair<String, String>>, maxTokens: Int = 900): String = JSONObject().apply {
+        put("model", model); put("temperature", 0.6); put("max_tokens", maxTokens)
         put("messages", JSONArray().apply {
             put(JSONObject().put("role", "system").put("content", system))
             history.takeLast(12).forEach { (role, text) -> put(JSONObject().put("role", role).put("content", text)) }
@@ -182,6 +238,10 @@ $context
         val block = Regex("```(?:json)?\\s*(\\{[\\s\\S]*?\\})\\s*```").find(text)?.groupValues?.get(1)
             ?: Regex("\\{[\\s\\S]*\"esercizi\"[\\s\\S]*\\}").find(text)?.value ?: return null
         val o = runCatching { JSONObject(block) }.getOrNull() ?: return null
+        return planFrom(o, "Scheda del coach")
+    }
+
+    private fun planFrom(o: JSONObject, fallback: String): WorkoutPlan? {
         val arr = o.optJSONArray("esercizi") ?: return null
         val list = (0 until arr.length()).mapNotNull { i ->
             val e = arr.optJSONObject(i) ?: return@mapNotNull null
@@ -193,7 +253,42 @@ $context
             Ex(name.take(60), e.optInt("serie", 1).coerceIn(1, 10), if (secs > 0) 0 else reps, e.optInt("riposo", 30).coerceIn(0, 300), seconds = secs)
         }
         if (list.isEmpty()) return null
-        return WorkoutPlan(Fitness.newPlanId(), "🤖 " + o.optString("nome", "Scheda del coach").trim().ifBlank { "Scheda del coach" }.take(40), list)
+        return WorkoutPlan(Fitness.newPlanId(), "🤖 " + o.optString("nome", fallback).trim().ifBlank { fallback }.take(40), list)
+    }
+
+    /** La richiesta per un programma di 4 settimane fatto dall'AI. */
+    fun programRequest(p: CoachPlan, extra: String): String = """
+Prepara un programma di 4 settimane con ${p.days} allenamenti a settimana da circa ${p.minutes} minuti, per l'obiettivo «${GOALS[p.goal]?.first ?: p.goal}».
+Ogni settimana un po' più impegnativa della precedente, la quarta più leggera. Ogni allenamento con riscaldamento, parte centrale e allungamenti.
+${if (extra.isNotBlank()) "Richieste della persona: $extra\n" else ""}Rispondi con due o tre righe di spiegazione e poi SOLO questo formato:
+```json
+{"settimane": [{"allenamenti": [{"nome": "Nome breve", "esercizi": [{"nome": "Squat", "serie": 3, "ripetizioni": 12, "secondi": 0, "riposo": 45}]}]}]}
+```
+""".trim()
+
+    /** Il programma nella risposta: le schede in ordine (settimana 1 allenamento 1, 2…, poi settimana 2…). */
+    fun parseProgram(text: String): List<WorkoutPlan>? {
+        val start = text.indexOf('{'); val end = text.lastIndexOf('}')
+        if (start < 0 || end <= start) return null
+        val o = runCatching { JSONObject(text.substring(start, end + 1)) }.getOrNull() ?: return null
+        val weeks = o.optJSONArray("settimane") ?: return null
+        val out = mutableListOf<WorkoutPlan>()
+        for (w in 0 until weeks.length()) {
+            val sessions = weeks.optJSONObject(w)?.optJSONArray("allenamenti") ?: continue
+            for (k in 0 until sessions.length()) sessions.optJSONObject(k)?.let { planFrom(it, "Settimana ${w + 1} · allenamento ${k + 1}") }?.let { out += it }
+        }
+        return out.takeIf { it.isNotEmpty() }
+    }
+
+    /** Programma dell'AI salvato: le schede e da quando vale. */
+    data class AiProgram(val startDay: Long, val days: Int, val plans: List<WorkoutPlan>)
+
+    /** La scheda di oggi dal programma dell'AI (null se oggi è riposo o il programma è finito). */
+    fun fromProgram(prog: AiProgram, date: LocalDate): WorkoutPlan? {
+        val k = trainingDays(prog.days).indexOf(date.dayOfWeek.value - 1)
+        if (k < 0) return null
+        val w = (ChronoUnit.DAYS.between(LocalDate.ofEpochDay(prog.startDay).with(DayOfWeek.MONDAY), date) / 7).toInt()
+        return if (w < 0) null else prog.plans.getOrNull(w * prog.days + k)
     }
 
     /** Il testo da mostrare, senza il blocco della scheda (la scheda si mostra a parte). */

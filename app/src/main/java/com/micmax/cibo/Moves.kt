@@ -32,12 +32,14 @@ data class Move(
     /** Braccia che seguono il busto (gli angoli delle braccia si sommano alla sua inclinazione). */
     val armsFollow: Boolean = false,
     val anchor: Anchor = Anchor.FEET, val prop: Prop = Prop.NONE,
+    /** Attrezzi che servono (vuoto = corpo libero): manubri, kettlebell, elastico, corda, sbarra, sedia. */
+    val equip: Set<String> = emptySet(),
 ) {
     val timed get() = secs > 0
 }
 
 enum class Anchor { FEET, HANDS, CENTER, NEAR_FOOT }
-enum class Prop { NONE, WALL_FRONT, WALL_BACK, STEP }
+enum class Prop { NONE, WALL_FRONT, WALL_BACK, STEP, DUMBBELLS, KETTLEBELL, BAND_FRONT, BAND_HANDS, ROPE, BAR, CHAIR }
 
 /** Catalogo degli esercizi con i disegni, e il generatore di schede. Niente Android qui: si prova con i test. */
 object Moves {
@@ -136,6 +138,58 @@ object Moves {
         val ax = anchorX(m, o); val low = lowest(o) + ps.air
         for (i in 0 until POINTS) { o[i * 2] = 50f + (o[i * 2] - ax + f.x) * f.scale; o[i * 2 + 1] = FLOOR - (low - o[i * 2 + 1]) * f.scale }
         return o
+    }
+
+    // ---------- gli attrezzi e l'ambiente disegnati ----------
+
+    /** Un pezzo di disegno: linea, cerchio pieno, rettangolo pieno o curva (da a1 a a2 passando vicino a c). */
+    sealed class Shape {
+        data class Line(val x1: Float, val y1: Float, val x2: Float, val y2: Float, val w: Float) : Shape()
+        data class Dot(val x: Float, val y: Float, val r: Float) : Shape()
+        data class Box(val l: Float, val t: Float, val r: Float, val b: Float) : Shape()
+        data class Curve(val x1: Float, val y1: Float, val cx: Float, val cy: Float, val x2: Float, val y2: Float, val w: Float) : Shape()
+    }
+
+    /** Muro, gradino, sedia, manubri, kettlebell, elastico, corda, sbarra per la posa [o] (punti di [figure]) al tempo [t]. */
+    fun propShapes(m: Move, t: Float, o: FloatArray): List<Shape> {
+        fun x(i: Int) = o[i * 2]
+        fun y(i: Int) = o[i * 2 + 1]
+        val f0 by lazy { figure(m, 0f) }
+        val k = scale(m)
+        val out = ArrayList<Shape>()
+        fun dumbbell(i: Int, e: Int) {   // il manubrio è perpendicolare all'avambraccio
+            val dx = x(i) - x(e); val dy = y(i) - y(e); val l = kotlin.math.sqrt(dx * dx + dy * dy).coerceAtLeast(0.01f)
+            val px = -dy / l * 4.5f * k; val py = dx / l * 4.5f * k
+            out += Shape.Line(x(i) - px, y(i) - py, x(i) + px, y(i) + py, 2.2f * k)
+            out += Shape.Dot(x(i) - px, y(i) - py, 2.4f * k); out += Shape.Dot(x(i) + px, y(i) + py, 2.4f * k)
+        }
+        when (m.prop) {
+            Prop.WALL_FRONT -> { val wx = maxOf(f0[R_HAND * 2], f0[L_HAND * 2]) + 3f * k; out += Shape.Box(wx, 8f, wx + 4f, FLOOR + 2f) }
+            Prop.WALL_BACK -> { val wx = minOf(f0[HIP * 2], f0[NECK * 2]) - 3f * k; out += Shape.Box(wx - 4f, 8f, wx, FLOOR + 2f) }
+            Prop.STEP -> { val fx = f0[R_FOOT * 2]; val fy = f0[R_FOOT * 2 + 1] + 2.5f * k; out += Shape.Box(fx - 10f * k, fy, fx + 12f * k, FLOOR + 3f) }
+            Prop.CHAIR -> { val hx = (f0[R_HAND * 2] + f0[L_HAND * 2]) / 2; val hy = f0[R_HAND * 2 + 1] + 2f * k
+                out += Shape.Box(hx - 14f * k, hy, hx + 2f * k, hy + 3f * k); out += Shape.Box(hx - 14f * k, hy, hx - 11f * k, FLOOR + 3f)
+                out += Shape.Box(hx - 1f * k, hy, hx + 2f * k, FLOOR + 3f); out += Shape.Box(hx - 14f * k, hy - 22f * k, hx - 11f * k, hy) }
+            Prop.DUMBBELLS -> { dumbbell(L_HAND, L_ELB); dumbbell(R_HAND, R_ELB) }
+            Prop.KETTLEBELL -> { val hx = (x(R_HAND) + x(L_HAND)) / 2; val hy = (y(R_HAND) + y(L_HAND)) / 2; out += Shape.Dot(hx, hy + 4.5f * k, 4.5f * k) }
+            Prop.BAND_FRONT -> { val ax = (f0[R_HAND * 2] + 0f).coerceAtLeast(x(R_HAND)) + 12f * k; val ay = f0[R_HAND * 2 + 1]
+                out += Shape.Line(x(R_HAND), y(R_HAND), ax, ay, 1.6f * k); out += Shape.Box(ax, ay - 3f * k, ax + 2.5f * k, ay + 3f * k) }
+            Prop.BAND_HANDS -> out += Shape.Line(x(L_HAND), y(L_HAND), x(R_HAND), y(R_HAND), 1.6f * k)
+            Prop.ROPE -> {   // la corda gira: sotto i piedi a metà del salto, sopra la testa quando si atterra
+                val ph = ((t % 2f) + 2f) % 2f / 2f
+                val c = kotlin.math.cos(ph * 2 * Math.PI).toFloat()
+                val top = y(HEAD) - HEAD_R * k - 6f * k; val bottom = FLOOR + 2f
+                val cy = (top + bottom) / 2 + (bottom - top) / 2 * -c * 1.15f
+                val cx = (x(R_HAND) + x(HIP)) / 2
+                // di profilo la corda è un anello: un lato davanti al corpo e uno dietro
+                fun half(hx: Float, hy: Float, side: Float) = Shape.Curve(hx, hy, (hx + cx) / 2 + side * 11f * k * kotlin.math.abs(c), (hy + cy) / 2, cx, cy, 1.4f * k)
+                out += half(x(R_HAND), y(R_HAND), 1f); out += half(x(L_HAND), y(L_HAND), -1f)
+            }
+            Prop.BAR -> { val by = minOf(f0[R_HAND * 2 + 1], f0[L_HAND * 2 + 1]) - 1.5f * k; val bx = f0[R_HAND * 2]
+                out += Shape.Line(bx - 22f * k, by, bx + 22f * k, by, 2.4f * k); out += Shape.Line(bx - 22f * k, by, bx - 22f * k, 4f, 2f * k); out += Shape.Line(bx + 22f * k, by, bx + 22f * k, 4f, 2f * k) }
+            Prop.NONE -> {}
+        }
+        return out
     }
 
     // ---------- il catalogo ----------
@@ -420,7 +474,7 @@ object Moves {
             "Sali su un gradino o su una sedia ben ferma spingendo con il piede che è sopra, porta su l'altro ginocchio, poi scendi con calma.",
             listOf(Pose(rUa = 20f, rFa = 40f, lUa = -20f, lFa = 10f, rTh = 75f, rSh = -10f),
                 Pose(rUa = -20f, rFa = 10f, lUa = 20f, lFa = 40f, rTh = 0f, rSh = 0f, lTh = 70f, lSh = -5f, air = 15.1f)),
-            reps = 10, perSide = true, anchor = Anchor.NEAR_FOOT, prop = Prop.STEP),
+            reps = 10, perSide = true, anchor = Anchor.NEAR_FOOT, prop = Prop.STEP, equip = setOf("sedia")),
         Move("affondo-laterale", "Affondo laterale", listOf("affondo laterale", "affondi laterali", "lateral lunge"), setOf("legs", "strength", "mobility"),
             "Gambe larghe. Piega un ginocchio spingendo il bacino indietro e di lato, l'altra gamba resta tesa. Torna al centro e cambia lato.",
             listOf(Pose(rUa = 20f, rFa = -110f, lUa = -20f, lFa = 110f, rTh = 20f, rSh = 20f, lTh = -20f, lSh = -20f),
@@ -435,6 +489,59 @@ object Moves {
             "Come il ponte per i glutei, ma con una gamba tesa in alto. Spingi con il tallone a terra e sali, senza far cadere il bacino da un lato.",
             listOf(SUPINE_KNEES.copy(lTh = 150f, lSh = 150f), Pose(torso = -58f, rUa = 90f, rFa = 90f, lUa = 92f, lFa = 92f, rTh = 100f, rSh = 12f, lTh = 122f, lSh = 122f)),
             reps = 10, perSide = true, minLevel = 2),
+
+        // ----- con gli attrezzi -----
+        Move("curl", "Curl con i manubri", listOf("curl"), setOf("upper", "strength"),
+            "In piedi, un manubrio per mano, braccia lungo i fianchi. Piega i gomiti e porta i pesi verso le spalle, poi scendi piano.",
+            listOf(Pose(rUa = 2f, rFa = 2f, lUa = 4f, lFa = 4f), Pose(rUa = 6f, rFa = 165f, lUa = 8f, lFa = 167f)),
+            reps = 12, prop = Prop.DUMBBELLS, equip = setOf("manubri")),
+        Move("rematore", "Rematore con i manubri", listOf("rematore con i manubri", "rematore manubri", "dumbbell row"), setOf("upper", "back", "strength"),
+            "Busto inclinato in avanti a schiena dritta, ginocchia morbide, manubri a braccia tese. Tira i gomiti indietro verso i fianchi, poi scendi.",
+            listOf(Pose(torso = 115f, rUa = 0f, rFa = 0f, lUa = 2f, lFa = 2f, rTh = 15f, rSh = -10f, lTh = 17f, lSh = -8f),
+                Pose(torso = 115f, rUa = -65f, rFa = 10f, lUa = -63f, lFa = 12f, rTh = 15f, rSh = -10f, lTh = 17f, lSh = -8f)),
+            reps = 12, prop = Prop.DUMBBELLS, equip = setOf("manubri")),
+        Move("spalle-manubri", "Distensioni per le spalle", listOf("distensioni per le spalle", "lento avanti", "shoulder press"), setOf("upper", "strength"),
+            "In piedi, manubri all'altezza delle spalle con i gomiti in fuori. Spingi i pesi sopra la testa senza inarcare la schiena, poi torna giù.",
+            listOf(Pose(rUa = 95f, rFa = 178f, lUa = -95f, lFa = -178f, rTh = 6f, rSh = 6f, lTh = -6f, lSh = -6f),
+                Pose(rUa = 165f, rFa = 175f, lUa = -165f, lFa = -175f, rTh = 6f, rSh = 6f, lTh = -6f, lSh = -6f)),
+            reps = 10, front = true, prop = Prop.DUMBBELLS, equip = setOf("manubri")),
+        Move("stacco", "Stacco rumeno con i manubri", listOf("stacco"), setOf("legs", "back", "strength"),
+            "Manubri davanti alle cosce, ginocchia appena piegate. Porta il bacino indietro e scendi con la schiena dritta facendo scivolare i pesi lungo le gambe, poi risali.",
+            listOf(Pose(rUa = 5f, rFa = 5f, lUa = 6f, lFa = 6f, rTh = 2f, rSh = 2f), Pose(torso = 100f, rUa = 5f, rFa = 5f, lUa = 6f, lFa = 6f, rTh = -14f, rSh = 0f, lTh = -12f, lSh = 2f)),
+            reps = 10, prop = Prop.DUMBBELLS, equip = setOf("manubri")),
+        Move("goblet", "Squat con peso al petto", listOf("goblet", "squat con peso", "squat con kettlebell", "squat con manubrio"), setOf("legs", "strength"),
+            "Tieni un manubrio o una kettlebell davanti al petto. Scendi in squat con il petto alto e i gomiti tra le ginocchia, poi spingi coi talloni.",
+            listOf(Pose(rUa = 15f, rFa = 160f, lUa = 17f, lFa = 162f), Pose(torso = 150f, rUa = 45f, rFa = 165f, lUa = 47f, lFa = 167f, rTh = 85f, rSh = -15f, lTh = 87f, lSh = -13f)),
+            reps = 12, prop = Prop.KETTLEBELL, equip = setOf("kettlebell")),
+        Move("swing", "Swing con la kettlebell", listOf("swing"), setOf("legs", "cardio", "strength"),
+            "Piedi larghi, kettlebell tra le gambe. Spingi il bacino in avanti con forza e lascia salire il peso fino al petto a braccia tese, poi lascialo ricadere piegandoti dalle anche.",
+            listOf(Pose(torso = 112f, rUa = -25f, rFa = -25f, lUa = -24f, lFa = -24f, rTh = 25f, rSh = -15f, lTh = 27f, lSh = -13f),
+                Pose(torso = 182f, rUa = 92f, rFa = 92f, lUa = 93f, lFa = 93f)),
+            reps = 15, minLevel = 2, prop = Prop.KETTLEBELL, equip = setOf("kettlebell")),
+        Move("elastico-rematore", "Rematore con l'elastico", listOf("rematore con l'elastico", "rematore elastico", "band row"), setOf("upper", "back", "strength", "lowimpact"),
+            "Fissa l'elastico davanti a te (a una maniglia chiusa o sotto i piedi). Tira i gomiti indietro stringendo le scapole, poi lascia tornare lento.",
+            listOf(Pose(rUa = 88f, rFa = 88f, lUa = 90f, lFa = 90f, rTh = 8f, rSh = -4f), Pose(rUa = -40f, rFa = 85f, lUa = -38f, lFa = 87f, rTh = 8f, rSh = -4f)),
+            reps = 15, prop = Prop.BAND_FRONT, equip = setOf("elastico")),
+        Move("elastico-aperture", "Aperture con l'elastico", listOf("aperture con l'elastico", "pull apart"), setOf("upper", "back", "lowimpact"),
+            "Braccia tese davanti al petto, elastico tra le mani. Apri le braccia di lato portando l'elastico al petto, scapole strette, poi richiudi piano.",
+            listOf(Pose(rUa = 55f, rFa = -60f, lUa = -55f, lFa = 60f, rTh = 5f, rSh = 5f, lTh = -5f, lSh = -5f),
+                Pose(rUa = 92f, rFa = 92f, lUa = -92f, lFa = -92f, rTh = 5f, rSh = 5f, lTh = -5f, lSh = -5f)),
+            reps = 15, front = true, prop = Prop.BAND_HANDS, equip = setOf("elastico")),
+        Move("corda", "Salto con la corda", listOf("corda", "rope"), setOf("cardio", "jump"),
+            "Gomiti vicini ai fianchi, la corda gira con i polsi. Salti piccoli sulle punte, appena sopra la corda.",
+            listOf(Pose(torso = 178f, rUa = -10f, rFa = 50f, lUa = -8f, lFa = 52f, rTh = 4f, rSh = -6f, lTh = 6f, lSh = -4f),
+                Pose(torso = 178f, rUa = -10f, rFa = 50f, lUa = -8f, lFa = 52f, rTh = -2f, rSh = -14f, lTh = 0f, lSh = -12f, air = 5f)),
+            secs = 40, minLevel = 2, prop = Prop.ROPE, equip = setOf("corda")),
+        Move("trazioni", "Trazioni alla sbarra", listOf("trazion", "pull-up", "pullup"), setOf("upper", "back", "strength"),
+            "Appeso alla sbarra, mani poco più larghe delle spalle. Tira portando il petto verso la sbarra e i gomiti verso i fianchi, poi scendi lento fino a braccia tese.",
+            listOf(Pose(rUa = 180f, rFa = 180f, lUa = 182f, lFa = 182f, rTh = 10f, rSh = -30f, lTh = 12f, lSh = -28f, air = 3f),
+                Pose(rUa = 20f, rFa = 175f, lUa = 22f, lFa = 177f, rTh = 10f, rSh = -30f, lTh = 12f, lSh = -28f, air = 32f)),
+            reps = 5, minLevel = 2, anchor = Anchor.HANDS, prop = Prop.BAR, equip = setOf("sbarra")),
+        Move("dip-sedia", "Dip sulla sedia", listOf("dip", "tricipiti alla sedia"), setOf("upper", "strength"),
+            "Mani sul bordo di una sedia ferma dietro di te, gambe avanti. Piega i gomiti indietro e scendi col bacino vicino alla sedia, poi spingi su.",
+            listOf(Pose(rUa = -15f, rFa = -15f, lUa = -13f, lFa = -13f, rTh = 80f, rSh = 0f, lTh = 82f, lSh = 2f),
+                Pose(rUa = -80f, rFa = 10f, lUa = -78f, lFa = 12f, rTh = 80f, rSh = 65f, lTh = 82f, lSh = 67f)),
+            reps = 10, anchor = Anchor.HANDS, prop = Prop.CHAIR, equip = setOf("sedia")),
     )
 
     private val byId = ALL.associateBy { it.id }
@@ -487,8 +594,19 @@ object Moves {
     }
     val LEVELS = listOf("Principiante", "Intermedio", "Avanzato")
 
-    private fun pool(goal: Goal, level: Int, noJumps: Boolean = false): List<Move> {
-        fun ok(m: Move) = level in m.minLevel..m.maxLevel && (level > 1 || "jump" !in m.tags) && !(noJumps && "jump" in m.tags)
+    /**
+     * Cosa si può fare: niente salti (anche per il silenzio), attrezzi che hai, spazio ([spaceCap] 0 = pochissimo,
+     * 1 = un tappetino, 2 = una stanza) e parti del corpo da non caricare.
+     */
+    data class Opts(val noJumps: Boolean = false, val equip: Set<String> = emptySet(), val spaceCap: Int = 2, val avoid: Set<String> = emptySet())
+
+    fun allowed(m: Move, o: Opts): Boolean {
+        val info = MoveInfos.of(m.id)
+        return !(o.noJumps && "jump" in m.tags) && o.equip.containsAll(m.equip) && info.space <= o.spaceCap && info.stress.none { it in o.avoid }
+    }
+
+    private fun pool(goal: Goal, level: Int, o: Opts = Opts()): List<Move> {
+        fun ok(m: Move) = level in m.minLevel..m.maxLevel && (level > 1 || "jump" !in m.tags) && allowed(m, o)
         val want: (Move) -> Boolean = when (goal) {
             Goal.STRETCH -> { m -> "stretch" in m.tags }
             Goal.MOBILITY -> { m -> "mobility" in m.tags }
@@ -501,6 +619,11 @@ object Moves {
         }
         return ALL.filter { want(it) && ok(it) }
     }
+
+    /** Se con queste scelte non resta niente (poco spazio, niente attrezzi…), si allarga un po' la scelta: prima altri livelli, poi altri tipi. */
+    private fun poolOrEasier(goal: Goal, level: Int, o: Opts): List<Move> =
+        pool(goal, level, o).ifEmpty { (1..3).flatMap { pool(goal, it, o) }.distinct() }
+            .ifEmpty { ALL.filter { level in it.minLevel..it.maxLevel && allowed(it, o) && ("strength" in it.tags || "stretch" in it.tags || "mobility" in it.tags) } }
 
     /** Un esercizio della scheda con serie, ripetizioni o secondi giusti per il livello (0 = principiante). */
     fun toEx(m: Move, level: Int, sets: Int, rest: Int, holdSecs: Int? = null, workSecs: Int? = null, preferReps: Boolean = false): Ex {
@@ -518,7 +641,8 @@ object Moves {
      * Crea una scheda: [minutes] minuti circa, [level] 0..2. [seed] cambia la scelta degli esercizi («Un'altra»).
      * Allenamenti: 2 esercizi di riscaldamento, il blocco principale, 2 allungamenti finali.
      */
-    fun generate(goal: Goal, minutes: Int, level: Int, seed: Long, noJumps: Boolean = false): WorkoutPlan {
+    fun generate(goal: Goal, minutes: Int, level: Int, seed: Long, noJumps: Boolean = false, opts: Opts = Opts(noJumps = noJumps)): WorkoutPlan {
+        val o = if (noJumps) opts.copy(noJumps = true) else opts
         val lv = level.coerceIn(0, 2); val rnd = Random(seed)
         val target = minutes.coerceIn(5, 90) * 60
         fun secs(l: List<Ex>) = l.sumOf { e -> e.sets * ((if (e.seconds > 0) e.seconds else 40) + e.restSec) }
@@ -526,7 +650,7 @@ object Moves {
         val hold = listOf(30, 40, 45)[lv]
         when (goal) {
             Goal.STRETCH, Goal.MOBILITY -> {
-                val p = pool(goal, lv + 1, noJumps).shuffled(rnd).let { l -> if (goal == Goal.MOBILITY) l.sortedBy { if (it.id == "collo" || it.id == "spalle") 0 else 1 } else l }
+                val p = poolOrEasier(goal, lv + 1, o).shuffled(rnd).let { l -> if (goal == Goal.MOBILITY) l.sortedBy { if (it.id == "collo" || it.id == "spalle") 0 else 1 } else l }
                 val queue = p.toMutableList()
                 while (secs(out) < target && queue.isNotEmpty()) {
                     val m = queue.removeAt(0)
@@ -538,16 +662,17 @@ object Moves {
             }
             else -> {
                 val short = minutes <= 10   // schede brevi: un solo esercizio di riscaldamento e uno di allungamento
-                val warmMoves = ALL.filter { "warmup" in it.tags && "jump" !in it.tags }.shuffled(rnd).take(if (short) 1 else 2)
+                val warmMoves = ALL.filter { "warmup" in it.tags && "jump" !in it.tags && allowed(it, o) }.shuffled(rnd).take(if (short) 1 else 2)
                 val warm = warmMoves.map { if (it.secs > 0) toEx(it, lv, 1, 10, workSecs = 30) else toEx(it, lv, 1, 10).copy(reps = 10) }
                 val coolPool = when (goal) { Goal.LEGS -> listOf("quadricipite", "femorali", "flessori", "polpacci"); Goal.BACK, Goal.CORE -> listOf("bambino", "cobra", "ginocchia-petto", "gatto"); else -> listOf("bambino", "femorali", "flessori", "avanti", "quadricipite") }
-                val coolMoves = coolPool.shuffled(rnd).take(if (short) 1 else 2).mapNotNull { byId(it) }
+                val coolMoves = coolPool.mapNotNull { byId(it) }.filter { allowed(it, o) }.ifEmpty { ALL.filter { "stretch" in it.tags && allowed(it, o) } }.shuffled(rnd).take(if (short) 1 else 2)
                 val cool = coolMoves.map { toEx(it, lv, 1, 10, holdSecs = 30) }
                 val cardio = goal == Goal.CARDIO
                 val sets = listOf(2, 3, 3)[lv]
                 val rest = if (cardio) listOf(30, 20, 15)[lv] else listOf(45, 40, 30)[lv]
                 val work = listOf(25, 35, 40)[lv]
-                var main = pool(goal, lv + 1, noJumps).filter { it !in warmMoves && it !in coolMoves }.shuffled(rnd)
+                var main = poolOrEasier(goal, lv + 1, o).filter { it !in warmMoves && it !in coolMoves }.shuffled(rnd)
+                if (o.equip.isNotEmpty()) main = main.sortedBy { if (it.equip.isNotEmpty()) 0 else 1 }   // se hai attrezzi, si usano
                 if (goal == Goal.BACK) main = main.sortedBy { if ("strength" in it.tags) 0 else 1 }   // prima il rinforzo, poi gli allungamenti
                 if (goal == Goal.FULL) {   // a turno gambe, parte alta, addominali
                     val groups = listOf("legs", "upper", "core").map { g -> main.filter { g in it.tags }.toMutableList() }

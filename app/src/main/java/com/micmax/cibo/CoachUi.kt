@@ -36,6 +36,27 @@ object CoachStore {
     }
     fun tries(c: Context, id: String) = prefs(c).getInt("tries_$id", 0)
 
+    /** Età, sesso, BMI dal profilo (Fabbisogno), passi medi e battito a riposo dall'orologio. */
+    fun body(c: Context): Body {
+        val p = Food.profile(c); val snap = Hc.cached(c); val days = Hc.last(snap?.days.orEmpty(), 7)
+        return Body(
+            age = p.birthYear.takeIf { it in 1900..2100 }?.let { LocalDate.now().year - it },
+            sex = p.sex.takeIf { it in setOf("m", "f") },
+            bmi = if (p.heightCm > 0 && p.weightKg > 0) Nutrition.bmi(p.weightKg, p.heightCm) else null,
+            avgSteps = Hc.avg(days) { it.steps.toDouble() }.takeIf { it > 0 },
+            restHr = Hc.avg(days) { it.restHr.toDouble() }.takeIf { it > 0 }?.toInt(),
+        )
+    }
+
+    fun fitResults(c: Context): List<FitResult> = runCatching {
+        Gson().fromJson<List<FitResult>>(prefs(c).getString("fit", null), object : com.google.gson.reflect.TypeToken<List<FitResult>>() {}.type)
+    }.getOrNull().orEmpty().filterNotNull().sortedBy { it.date }
+    fun addFitResult(c: Context, r: FitResult) = prefs(c).edit().putString("fit", Gson().toJson((fitResults(c) + r).takeLast(30))).apply()
+
+    fun program(c: Context): Coach.AiProgram? = prefs(c).getString("ai_program", null)?.let { runCatching { Gson().fromJson(it, Coach.AiProgram::class.java) }.getOrNull() }
+        ?.takeIf { it.plans != null && it.plans.isNotEmpty() }
+    fun setProgram(c: Context, p: Coach.AiProgram?) = prefs(c).edit().apply { if (p == null) remove("ai_program") else putString("ai_program", Gson().toJson(p)) }.apply()
+
     /** Ha fatto un allenamento in quel giorno (app o orologio)? */
     fun trainedOn(c: Context, d: LocalDate): Boolean = Fitness.allTimes(c).any { java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault()).toLocalDate() == d }
 }
@@ -69,6 +90,12 @@ object CoachAi {
         val snap = Hc.cached(c)
         Hc.today(snap)?.steps?.takeIf { it > 0 }?.let { lines += "Passi oggi: $it" }
         Hc.lastNight(snap)?.let { lines += "Sonno ultima notte: ${Hc.duration(it.sleepMin)}" }
+        CoachStore.plan(c)?.let { p ->
+            lines += "Attrezzi: " + (p.equip.orEmpty().takeIf { it.isNotEmpty() }?.joinToString(", ") { MoveInfos.EQUIPMENT[it] ?: it } ?: "nessuno, solo corpo libero")
+            lines += "Spazio in casa: " + MoveInfos.SPACES[p.space.coerceIn(0, 2)].lowercase() + if (p.quiet) "; deve essere silenzioso (niente salti)" else ""
+            p.avoid.orEmpty().takeIf { it.isNotEmpty() }?.let { lines += "Da proteggere: " + it.joinToString(", ") + " (niente esercizi pesanti per queste parti)" }
+        }
+        CoachStore.fitResults(c).lastOrNull()?.let { r -> lines += "Ultimo test di forma: ${r.pushups} flessioni in 1 minuto, ${r.squats} squat in 1 minuto, plank ${r.plankSec} secondi" + (r.restHr?.let { ", battito a riposo $it" } ?: "") }
         if (AiKeys.sendProfile(c)) {
             val p = Food.profile(c)
             if (p.birthYear > 0) lines += "Età: ${LocalDate.now().year - p.birthYear} anni"
@@ -80,7 +107,7 @@ object CoachAi {
     }
 
     /** Chiede al primo servizio con la chiave; se non risponde prova il successivo. Da chiamare fuori dal thread principale. */
-    fun ask(c: Context, history: List<Pair<String, String>>): Result<String> {
+    fun ask(c: Context, history: List<Pair<String, String>>, maxTokens: Int = 900): Result<String> {
         val providers = AiKeys.ready(c)
         if (providers.isEmpty()) return Result.failure(IllegalStateException("Manca la chiave: aggiungila nelle impostazioni del coach (in alto a destra)."))
         val system = Coach.systemPrompt(context(c))
@@ -91,7 +118,7 @@ object CoachAi {
                 conn.requestMethod = "POST"; conn.connectTimeout = 15000; conn.readTimeout = 60000; conn.doOutput = true
                 conn.setRequestProperty("Content-Type", "application/json")
                 conn.setRequestProperty("Authorization", "Bearer " + AiKeys.key(c, p.id))
-                conn.outputStream.use { it.write(Coach.request(AiKeys.model(c, p), system, history).toByteArray()) }
+                conn.outputStream.use { it.write(Coach.request(AiKeys.model(c, p), system, history, maxTokens).toByteArray()) }
                 val code = conn.responseCode
                 val body = (if (code in 200..299) conn.inputStream else conn.errorStream)?.use { it.readBytes().toString(Charsets.UTF_8) }
                 if (code !in 200..299) error(Coach.errorText(code, body))
@@ -119,16 +146,19 @@ fun MainActivity.openCoach() {
             val week = Coach.weekPlan(p, today)
             val day = week.first { it.date == today }
             val sleepH = Hc.lastNight(Hc.cached(this))?.sleepMin?.div(60.0)
+            val bodyInfo = CoachStore.body(this); val pers = Coach.personal(bodyInfo)
+            val prog = CoachStore.program(this); val progPlan = prog?.let { Coach.fromProgram(it, today) }
+            val restDay = if (prog != null) progPlan == null else day.goal == null
             sectionLabel(body, "OGGI · SETTIMANA ${Coach.week(p, today)} · LIVELLO ${Moves.LEVELS[Coach.level(p)].uppercase()}")
             val card = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL; background = roundBg(col(R.color.card), 18, col(R.color.stroke)); setPadding(dp(16), dp(14), dp(16), dp(14))
                 layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) }
             }
-            val ch = day.challenge
-            val todayPlan = Coach.todayPlan(p, day, coachTweaks, sleepH, coachSeed)
+            val ch = if (prog != null) null else day.challenge
+            val todayPlan = if (progPlan != null && coachTweaks.isEmpty()) progPlan else Coach.todayPlan(p, day, coachTweaks, sleepH, coachSeed, pers)
             val title = when {
                 ch != null && coachTweaks.isEmpty() -> "⏱ Contro il tempo: ${ch.name}"
-                day.goal == null && coachTweaks.isEmpty() -> "Oggi riposo 😌"
+                restDay && coachTweaks.isEmpty() -> "Oggi riposo 😌"
                 else -> todayPlan.name.substringAfter("· ")
             }
             card.addView(TextView(this).apply { text = title; textSize = 18f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(col(R.color.text)) })
@@ -137,11 +167,11 @@ fun MainActivity.openCoach() {
                 if (sleepH != null && sleepH < 6) add("Hai dormito ${Hc.duration((sleepH * 60).toLong())}: oggi scheda più leggera.")
                 if (day.note.isNotBlank()) add(day.note)
                 if (ch != null && coachTweaks.isEmpty()) add("${ch.rounds} giri da finire il prima possibile, circa ${ch.estMinutes()} min. " + (CoachStore.best(this@openCoach, ch.id).takeIf { it > 0 }?.let { "Il tuo record: ${Challenges.clock(it)}." } ?: "Sarà il tuo primo record."))
-                else if (day.goal != null || coachTweaks.isNotEmpty()) add("${todayPlan.exercises.size} esercizi · circa ${Fitness.planMinutes(todayPlan)} min")
+                else if (!restDay || coachTweaks.isNotEmpty()) add("${todayPlan.exercises.size} esercizi · circa ${Fitness.planMinutes(todayPlan)} min")
             }
             notes.forEach { n -> card.addView(TextView(this).apply { text = n; textSize = 13.5f; setTextColor(col(R.color.muted)); setPadding(0, dp(4), 0, 0) }) }
             if (ch != null && coachTweaks.isEmpty()) card.addView(primaryButton("▶ Inizia la sfida") { runChallenge(ch) })
-            else if (day.goal != null || coachTweaks.isNotEmpty()) {
+            else if (!restDay || coachTweaks.isNotEmpty()) {
                 todayPlan.exercises.take(4).forEach { e -> card.addView(TextView(this).apply { text = "• ${e.name} — ${exLine(e)}"; textSize = 13f; setTextColor(col(R.color.text)) }) }
                 if (todayPlan.exercises.size > 4) card.addView(TextView(this).apply { text = "… e altri ${todayPlan.exercises.size - 4}"; textSize = 13f; setTextColor(col(R.color.muted)) })
                 card.addView(primaryButton("▶ Inizia") { runPlan(todayPlan, coach = true) })
@@ -171,14 +201,37 @@ fun MainActivity.openCoach() {
                     })
                 }
             })
+            sectionLabel(body, "SU MISURA PER TE")
+            if (prog != null) listRow(body, "✨", "Stai seguendo il programma dell'AI", "${prog.plans.size} allenamenti in 4 settimane · tocca per tornare a quello dell'app") {
+                MaterialAlertDialogBuilder(this).setTitle("Tornare al programma dell'app?").setMessage("Il programma fatto con l'AI verrà tolto.")
+                    .setPositiveButton("Sì") { _, _ -> CoachStore.setProgram(this, null); render() }.setNegativeButton("No", null).show()
+            }
+            val last = CoachStore.fitResults(this).lastOrNull()
+            listRow(body, "📋", "Test di forma", last?.let { r -> val lv = FitTest.levels(r, bodyInfo); "Ultimo: ${java.time.Instant.ofEpochMilli(r.date).atZone(java.time.ZoneId.systemDefault()).toLocalDate().let { "${it.dayOfMonth}/${it.monthValue}" }} · livello ${Moves.LEVELS[lv["overall"] ?: 0].lowercase()}" + if (System.currentTimeMillis() - r.date > 28 * 86_400_000L) " · è ora di rifarlo" else "" }
+                ?: "5 minuti per capire da dove partire: flessioni, squat e plank") { openFitTest() }
+            listRow(body, "✨", "Programma di 4 settimane con l'AI", if (AiKeys.ready(this).isEmpty()) "Serve la chiave di Groq, Gemini o NVIDIA" else "Su misura con età, peso, test di forma, attrezzi e spazio") { aiProgramDialog { render() } }
+            val optsLine = listOfNotNull(
+                p.equip.orEmpty().takeIf { it.isNotEmpty() }?.joinToString(", ") { MoveInfos.EQUIPMENT[it]?.substringBefore(" (")?.lowercase() ?: it } ?: "corpo libero",
+                MoveInfos.SPACES[p.space.coerceIn(0, 2)].lowercase(),
+                if (p.quiet) "silenzioso" else null,
+                p.avoid.orEmpty().takeIf { it.isNotEmpty() }?.let { "proteggo " + it.joinToString(", ") },
+            ).joinToString(" · ")
+            listRow(body, "⚙️", "Attrezzi, spazio e limiti", optsLine) { coachSetup(CoachStore.plan(this)) { render() } }
+            if (pers.notes.isNotEmpty()) body.addView(TextView(this).apply {
+                text = pers.notes.joinToString("\n") { "• $it" }; textSize = 13.5f; setTextColor(col(R.color.muted)); setPadding(dp(8), dp(2), dp(8), dp(6))
+            })
+            if (bodyInfo.age == null || bodyInfo.bmi == null) hintLabel(body, "Inserisci età, altezza e peso in «Fabbisogno»: il coach adatta il programma anche a questi.")
             sectionLabel(body, "CHIEDI AL COACH")
             listRow(body, "✨", "Scrivi al coach", if (AiKeys.ready(this).isEmpty()) "Con Gemini, Groq o NVIDIA: aggiungi la tua chiave" else "«Ho 15 minuti e mi fanno male le ginocchia…»") { openCoachChat() }
             sectionLabel(body, "LA TUA SETTIMANA")
             week.forEach { d ->
                 val name = d.date.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.ITALIAN).replaceFirstChar { it.uppercase() }
                 val done = CoachStore.trainedOn(this, d.date)
-                val what = when { d.challenge != null -> "Contro il tempo · ${d.challenge.name}"; d.goal != null -> "${d.goal.label} · ${d.minutes} min"; else -> "Riposo" }
-                listRow(body, when { done -> "✅"; d.goal == null -> "😴"; d.challenge != null -> "⏱"; else -> "🏋️" }, name + if (d.date == today) " · oggi" else "", what + if (done) " · fatto" else "") {}
+                val pp = prog?.let { Coach.fromProgram(it, d.date) }
+                val rest = if (prog != null) pp == null else d.goal == null
+                val what = when { prog != null -> pp?.name?.removePrefix("🤖 ")?.let { "$it · ${Fitness.planMinutes(pp)} min" } ?: "Riposo"
+                    d.challenge != null -> "Contro il tempo · ${d.challenge.name}"; d.goal != null -> "${d.goal.label} · ${d.minutes} min"; else -> "Riposo" }
+                listRow(body, when { done -> "✅"; rest -> "😴"; prog == null && d.challenge != null -> "⏱"; else -> "🏋️" }, name + if (d.date == today) " · oggi" else "", what + if (done) " · fatto" else "") {}
             }
             sectionLabel(body, "ALTRO")
             listRow(body, "⏱", "Contro il tempo", "Allenamenti a giri con il tuo record personale") { openChallenges() }
@@ -194,6 +247,8 @@ fun MainActivity.openCoach() {
 fun MainActivity.coachSetup(cur: CoachPlan?, done: () -> Unit) {
     var goal = cur?.goal ?: "forma"; var days = cur?.days ?: 3; var minutes = cur?.minutes ?: 20
     var level = cur?.let { Coach.level(it) } ?: 0; var noJumps = cur?.noJumps ?: false
+    val equip = cur?.equip.orEmpty().toMutableSet(); var space = cur?.space ?: 0; var quiet = cur?.quiet ?: false
+    val avoid = cur?.avoid.orEmpty().toMutableSet()
     val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(4), dp(20), dp(4)) }
     lateinit var render: () -> Unit
     fun label(t: String) = box.addView(TextView(this).apply { text = t; textSize = 12f; letterSpacing = 0.06f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(col(R.color.muted)); setPadding(0, dp(12), 0, dp(4)) })
@@ -227,16 +282,22 @@ fun MainActivity.coachSetup(cur: CoachPlan?, done: () -> Unit) {
         label("GIORNI A SETTIMANA"); choices(dayOpts.map { "$it" }, dayOpts.indexOf(days)) { days = dayOpts[it] }
         label("MINUTI PER ALLENAMENTO"); choices(minOpts.map { "$it min" }, minOpts.indexOf(minutes).coerceAtLeast(0)) { minutes = minOpts[it] }
         label("COME TI SENTI ALLENATO"); choices(Moves.LEVELS, level) { level = it }
-        box.addView(android.widget.CheckBox(this).apply { text = "Niente salti (ginocchia, vicini di casa…)"; isChecked = noJumps; setOnCheckedChangeListener { _, b -> noJumps = b }; setPadding(0, dp(10), 0, 0) })
+        box.addView(android.widget.CheckBox(this).apply { text = "Niente salti"; isChecked = noJumps; setOnCheckedChangeListener { _, b -> noJumps = b }; setPadding(0, dp(10), 0, 0) })
+        box.addView(android.widget.CheckBox(this).apply { text = "Silenzioso (vicini di sotto, bambini che dormono)"; isChecked = quiet; setOnCheckedChangeListener { _, b -> quiet = b } })
+        label("ATTREZZI CHE HAI")
+        MoveInfos.EQUIPMENT.forEach { (k, v) -> box.addView(android.widget.CheckBox(this).apply { text = v; isChecked = k in equip; setOnCheckedChangeListener { _, b -> if (b) equip += k else equip -= k } }) }
+        label("SPAZIO IN CASA"); choices(MoveInfos.SPACES, space) { space = it }
+        label("DA PROTEGGERE (niente esercizi pesanti per…)")
+        MoveInfos.BODY_PARTS.forEach { (k, v) -> box.addView(android.widget.CheckBox(this).apply { text = v; isChecked = k in avoid; setOnCheckedChangeListener { _, b -> if (b) avoid += k else avoid -= k } }) }
     }
     render()
     val b = MaterialAlertDialogBuilder(this).setTitle(if (cur == null) "🤖 Il tuo programma" else "Cambia programma").setView(android.widget.ScrollView(this).apply { addView(box) })
         .setPositiveButton(if (cur == null) "Comincia" else "Salva") { _, _ ->
             // il livello si tiene «fine» se non è cambiato, così non si perdono i Facile/Difficile
             val lv = if (cur != null && Coach.level(cur) == level) cur.level else level.toDouble()
-            CoachStore.save(this, CoachPlan(goal, days, minutes, lv, noJumps, cur?.startDay ?: LocalDate.now().toEpochDay())); done()
+            CoachStore.save(this, CoachPlan(goal, days, minutes, lv, noJumps, cur?.startDay ?: LocalDate.now().toEpochDay(), equip.toList(), space, quiet, avoid.toList())); done()
         }.setNegativeButton("Annulla", null)
-    if (cur != null) b.setNeutralButton("Ricomincia") { _, _ -> CoachStore.save(this, CoachPlan(goal, days, minutes, level.toDouble(), noJumps)); done() }
+    if (cur != null) b.setNeutralButton("Ricomincia") { _, _ -> CoachStore.save(this, CoachPlan(goal, days, minutes, level.toDouble(), noJumps, equip = equip.toList(), space = space, quiet = quiet, avoid = avoid.toList())); CoachStore.setProgram(this, null); done() }
     b.show()
 }
 
@@ -501,5 +562,134 @@ fun MainActivity.runChallenge(ch: ForTime) {
             if (finished || startedAt == 0L) false
             else { MaterialAlertDialogBuilder(this).setTitle("Interrompere la sfida?").setMessage("Il tempo non verrà salvato.").setPositiveButton("Interrompi") { _, _ -> pop() }.setNegativeButton("Continua", null).show(); true }
         }
+    }
+}
+
+
+// ======================= programma di 4 settimane con l'AI =======================
+
+fun MainActivity.aiProgramDialog(done: () -> Unit) {
+    val p = CoachStore.plan(this) ?: return coachSetup(null) { aiProgramDialog(done) }
+    if (AiKeys.ready(this).isEmpty()) { aiSettings { }; return }
+    val extra = field("Richieste (facoltativo): es. «niente salti, voglio rinforzare la schiena»", null, multiline = true).apply { minLines = 2 }
+    val box = form(TextView(this).apply {
+        text = "L'AI prepara ${p.days} allenamenti a settimana per 4 settimane, da circa ${p.minutes} minuti, per «${Coach.GOALS[p.goal]?.first}». Tiene conto di attrezzi, spazio, test di forma" +
+            (if (AiKeys.sendProfile(this@aiProgramDialog)) ", età e peso." else " (età e peso solo se li permetti nelle impostazioni della chat).")
+        textSize = 14f; setTextColor(col(R.color.text)); setPadding(0, 0, 0, dp(10))
+    }, extra)
+    MaterialAlertDialogBuilder(this).setTitle("✨ Programma con l'AI").setView(box).setPositiveButton("Prepara") { _, _ ->
+        val wait = MaterialAlertDialogBuilder(this).setTitle("Sto preparando il programma…").setMessage("Può volerci fino a un minuto.").setCancelable(false).show()
+        io.execute {
+            val r = CoachAi.ask(this, listOf("user" to Coach.programRequest(p, extra.text.toString())), maxTokens = 6000)
+            runOnUiThread {
+                wait.dismiss()
+                r.onSuccess { text ->
+                    val plans = Coach.parseProgram(text)
+                    if (plans == null) MaterialAlertDialogBuilder(this).setTitle("Il programma non si legge").setMessage("L'AI non ha risposto nel formato giusto. Riprova (a volte basta una seconda volta).\n\n" + Coach.withoutPlan(text).take(600)).setPositiveButton("Ok", null).show()
+                    else {
+                        CoachStore.setProgram(this, Coach.AiProgram(LocalDate.now().toEpochDay(), p.days, plans))
+                        MaterialAlertDialogBuilder(this).setTitle("✓ Programma pronto").setMessage("${plans.size} allenamenti. Li trovi giorno per giorno nel coach.\n\n" + Coach.withoutPlan(text).substringBefore("{").trim().take(500))
+                            .setPositiveButton("Ok") { _, _ -> done() }.show()
+                    }
+                }.onFailure { e -> MaterialAlertDialogBuilder(this).setTitle("Non sono riuscito a chiedere all'AI").setMessage(e.message).setPositiveButton("Ok", null).show() }
+            }
+        }
+    }.setNegativeButton("Annulla", null).show()
+}
+
+// ======================= test di forma =======================
+
+/** Flessioni in 1 minuto, squat in 1 minuto, plank più lungo possibile, battito a riposo: da qui il livello. */
+fun MainActivity.openFitTest() {
+    var step = 0; var pushups = 0; var squats = 0; var plank = 0; var timer: CountDownTimer? = null
+    val tone = runCatching { android.media.ToneGenerator(android.media.AudioManager.STREAM_MUSIC, 80) }.getOrNull()
+    val voice = Fitness.voice(this)
+    fun say(t: String) { if (voice) speak(t) }
+    fun beep(long: Boolean = false) { runCatching { tone?.startTone(android.media.ToneGenerator.TONE_PROP_BEEP, if (long) 500 else 120) } }
+    openScreen("Test di forma") { body, s ->
+        lateinit var render: () -> Unit
+        fun title(t: String) = body.addView(TextView(this).apply { text = t; textSize = 22f; setTypeface(typeface, android.graphics.Typeface.BOLD); gravity = Gravity.CENTER; setTextColor(col(R.color.text)); setPadding(dp(8), dp(10), dp(8), dp(4)) })
+        fun note(t: String) = body.addView(TextView(this).apply { text = t; textSize = 14.5f; gravity = Gravity.CENTER; setTextColor(col(R.color.muted)); setPadding(dp(10), dp(4), dp(10), dp(8)) })
+        fun big(t: String) = TextView(this).apply { text = t; textSize = 72f; setTypeface(typeface, android.graphics.Typeface.BOLD); gravity = Gravity.CENTER; setTextColor(col(R.color.accent)) }
+        /** Un minuto di ripetizioni: tocchi +1 a ognuna; alla fine si può correggere il numero. */
+        fun minuteTest(name: String, moveId: String, hint: String, set: (Int) -> Unit) {
+            var count = 0; var running = false
+            title("${step}/3 · $name"); note(hint)
+            Moves.byId(moveId)?.let { m -> body.addView(moveView(m, 150).apply { setOnClickListener { showMove(m) } }) }
+            val clock = TextView(this).apply { text = "1:00"; textSize = 20f; gravity = Gravity.CENTER; setTextColor(col(R.color.muted)) }
+            val counter = big("0")
+            body.addView(clock); body.addView(counter)
+            val main = primaryButton("▶ Via (60 secondi)") {}
+            main.setOnClickListener {
+                if (!running) {
+                    running = true; main.text = "＋1 (tocca a ogni ripetizione)"; say("Via!"); beep()
+                    timer = object : CountDownTimer(60_000, 250) {
+                        override fun onTick(ms: Long) { val left = (ms + 999) / 1000; clock.text = Fitness.clock(left.toInt()); if (left == 10L && clock.tag != 10) { clock.tag = 10; say("Dieci secondi") } }
+                        override fun onFinish() {
+                            beep(true); say("Stop! $count."); running = false; main.text = "Avanti ✓"
+                            main.setOnClickListener { set(count); step++; render() }
+                        }
+                    }.start()
+                } else { count++; counter.text = "$count"; beep() }
+            }
+            body.addView(main)
+            body.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; setPadding(0, dp(8), 0, 0)
+                fun b(t: String, d: Int) = addView(MaterialButton(this@openFitTest, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply { text = t; setOnClickListener { count = (count + d).coerceAtLeast(0); counter.text = "$count" } })
+                b("− 1", -1); addView(TextView(this@openFitTest).apply { text = "  correggi  "; setTextColor(col(R.color.muted)) }); b("+ 1", 1)
+            })
+        }
+        render = {
+            timer?.cancel(); body.removeAllViews()
+            when (step) {
+                0 -> {
+                    emptyState(body, "📋", "Il test di forma", "Tre prove, circa 5 minuti: flessioni in un minuto, squat in un minuto e plank finché ce la fai. Fai qualche minuto di riscaldamento prima. Riposa quanto vuoi tra una prova e l'altra.\n\nSe hai problemi di cuore, pressione o dolori, chiedi prima al medico.", "Comincia") { step = 1; render() }
+                }
+                1 -> minuteTest("Flessioni", "flessioni", "Quante più flessioni puoi in un minuto, fatte bene. Vanno bene anche sulle ginocchia (segnalo nel conteggio come le altre).") { pushups = it }
+                2 -> minuteTest("Squat", "squat", "Quanti più squat puoi in un minuto, scendendo con le cosce parallele al pavimento.") { squats = it }
+                3 -> {
+                    title("3/3 · Plank"); note("Tieni il plank sugli avambracci finché riesci a stare dritto. Tocca «Stop» quando il bacino cade.")
+                    Moves.byId("plank")?.let { m -> body.addView(moveView(m, 150)) }
+                    val counter = big("0:00"); body.addView(counter)
+                    var started = 0L
+                    val main = primaryButton("▶ Via") {}
+                    main.setOnClickListener {
+                        if (started == 0L) {
+                            started = System.currentTimeMillis(); main.text = "■ Stop"; say("Via!"); beep()
+                            timer = object : CountDownTimer(30 * 60_000L, 250) {
+                                override fun onTick(ms: Long) { val sec = ((System.currentTimeMillis() - started) / 1000).toInt(); counter.text = Fitness.clock(sec); if (sec > 0 && sec % 30 == 0 && counter.tag != sec) { counter.tag = sec; say("$sec secondi") } }
+                                override fun onFinish() {}
+                            }.start()
+                        } else { timer?.cancel(); plank = ((System.currentTimeMillis() - started) / 1000).toInt(); beep(true); say("Bravo! $plank secondi."); step = 4; render() }
+                    }
+                    body.addView(main)
+                }
+                else -> {
+                    val b = CoachStore.body(this)
+                    val hr = field("Battito a riposo (facoltativo)", b.restHr?.toString(), number = true)
+                    val prev = CoachStore.fitResults(this).lastOrNull()
+                    val r = FitResult(System.currentTimeMillis(), pushups, squats, plank, b.restHr)
+                    val lv = FitTest.levels(r, b)
+                    title("Risultato")
+                    body.addView(statRow(Triple("Flessioni", "$pushups", Moves.LEVELS[lv["upper"]!!].lowercase()), Triple("Squat", "$squats", Moves.LEVELS[lv["legs"]!!].lowercase()), Triple("Plank", Fitness.clock(plank), Moves.LEVELS[lv["core"]!!].lowercase())))
+                    body.addView(TextView(this).apply { text = "Livello generale: ${Moves.LEVELS[lv["overall"]!!]}"; textSize = 19f; gravity = Gravity.CENTER; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(col(R.color.accent)); setPadding(0, dp(12), 0, dp(4)) })
+                    prev?.let { FitTest.progress(it, r) }?.takeIf { it.isNotEmpty() }?.let { note("Rispetto all'ultima volta: " + it.joinToString(", ")) }
+                    if (b.age == null) note("Con l'età in «Fabbisogno» il livello tiene conto anche di quella.")
+                    body.addView(form(hr))
+                    body.addView(primaryButton("Salva e usa nel coach") {
+                        val res = r.copy(restHr = hr.text.toString().toIntOrNull()?.takeIf { it in 30..200 })
+                        CoachStore.addFitResult(this, res)
+                        val cp = CoachStore.plan(this)
+                        if (cp != null) CoachStore.save(this, cp.copy(level = lv["overall"]!!.toDouble()))
+                        else CoachStore.save(this, CoachPlan(level = lv["overall"]!!.toDouble()))
+                        confetti(); toast("✓ Salvato: il coach parte dal livello ${Moves.LEVELS[lv["overall"]!!].lowercase()}"); pop()
+                    })
+                    hintLabel(body, "Rifai il test ogni 4 settimane per vedere i progressi.")
+                }
+            }
+        }
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        s.onClose = { timer?.cancel(); tone?.release(); stopSpeaking(); window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+        render()
     }
 }

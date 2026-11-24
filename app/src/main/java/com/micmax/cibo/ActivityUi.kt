@@ -327,6 +327,8 @@ private fun MainActivity.beepTone(): ToneGenerator? = runCatching { ToneGenerato
 /** Fa la scheda serie per serie: ripetizioni da toccare o conto alla rovescia, riposo a tempo, bip e (a scelta) voce. */
 /** [coach]: scheda del coach, alla fine chiede com'è andata per regolare il livello. */
 fun MainActivity.runPlan(plan: WorkoutPlan, coach: Boolean = false) {
+    // si possono cambiare esercizi durante la scheda (più facile / più difficile)
+    val exs = plan.exercises.toMutableList()
     var exI = 0; var setI = 0; var reps = 0
     var timer: CountDownTimer? = null
     val tone = beepTone()
@@ -353,8 +355,8 @@ fun MainActivity.runPlan(plan: WorkoutPlan, coach: Boolean = false) {
             }
         /** A che punto sei: serie fatte su tutte le serie della scheda. */
         fun progressHeader() {
-            val total = plan.exercises.sumOf { it.sets }.coerceAtLeast(1)
-            val done = plan.exercises.take(exI).sumOf { it.sets } + setI
+            val total = exs.sumOf { it.sets }.coerceAtLeast(1)
+            val done = exs.take(exI).sumOf { it.sets } + setI
             body.addView(progressBar(done.toDouble() / total, col(R.color.accent), 6))
             body.addView(TextView(this).apply { text = "${(done * 100 / total)}% della scheda"; textSize = 12f; setTextColor(col(R.color.muted)); gravity = Gravity.END; setPadding(0, 0, dp(6), 0) })
         }
@@ -366,15 +368,15 @@ fun MainActivity.runPlan(plan: WorkoutPlan, coach: Boolean = false) {
         }
         fun nextSet() {
             timer?.cancel()
-            val e = plan.exercises[exI]
+            val e = exs[exI]
             if (setI + 1 < e.sets) setI++ else { exI++; setI = 0 }
             reps = 0; render()
         }
-        fun needsRest(e: Ex) = e.restSec > 0 && (setI + 1 < e.sets || exI + 1 < plan.exercises.size)
+        fun needsRest(e: Ex) = e.restSec > 0 && (setI + 1 < e.sets || exI + 1 < exs.size)
         fun rest(sec: Int) {
             body.removeAllViews()
-            val e = plan.exercises.getOrNull(exI)
-            val upNext = if (setI + 1 < (e?.sets ?: 0)) "${e!!.name}, serie ${setI + 2} di ${e.sets}" else plan.exercises.getOrNull(exI + 1)?.name?.let { "Prossimo: $it" } ?: "Ultimo esercizio completato"
+            val e = exs.getOrNull(exI)
+            val upNext = if (setI + 1 < (e?.sets ?: 0)) "${e!!.name}, serie ${setI + 2} di ${e.sets}" else exs.getOrNull(exI + 1)?.name?.let { "Prossimo: $it" } ?: "Ultimo esercizio completato"
             progressHeader()
             body.addView(big("Riposo", 22f, col(R.color.muted)))
             // conto alla rovescia dentro un anello che si svuota
@@ -385,7 +387,7 @@ fun MainActivity.runPlan(plan: WorkoutPlan, coach: Boolean = false) {
                 addView(t, android.widget.FrameLayout.LayoutParams(-1, -1).apply { gravity = Gravity.CENTER }); t.gravity = Gravity.CENTER
             }, LinearLayout.LayoutParams(dp(190), dp(190)).apply { gravity = Gravity.CENTER_HORIZONTAL; setMargins(0, dp(6), 0, dp(6)) })
             body.addView(note(upNext))
-            val nextEx = if (setI + 1 < (e?.sets ?: 0)) e else plan.exercises.getOrNull(exI + 1)
+            val nextEx = if (setI + 1 < (e?.sets ?: 0)) e else exs.getOrNull(exI + 1)
             Moves.find(nextEx?.name ?: "")?.let { m -> body.addView(moveView(m, 120).apply { setOnClickListener { showMove(m) } }) }
             body.addView(btn("Salta il riposo", secondary = true) { nextSet() }); body.addView(voiceBtn())
             say("Riposo. $sec secondi. $upNext.")
@@ -400,7 +402,7 @@ fun MainActivity.runPlan(plan: WorkoutPlan, coach: Boolean = false) {
         }
         render = {
             body.removeAllViews()
-            val e = plan.exercises.getOrNull(exI)
+            val e = exs.getOrNull(exI)
             if (e == null) {
                 timer?.cancel(); finished = true
                 val min = ((System.currentTimeMillis() - started) / 60000).toInt().coerceAtLeast(1)
@@ -415,7 +417,7 @@ fun MainActivity.runPlan(plan: WorkoutPlan, coach: Boolean = false) {
                 beep(true); say("Scheda completata. Bravo! $min minuti.")
             } else {
                 progressHeader()
-                body.addView(big("Esercizio ${exI + 1} di ${plan.exercises.size}", 14f, col(R.color.muted)))
+                body.addView(big("Esercizio ${exI + 1} di ${exs.size}", 14f, col(R.color.muted)))
                 body.addView(big(e.name, 26f))
                 val move = Moves.find(e.name)
                 val repMs = (Moves.repSeconds(move, tempo) * 1000).toLong()
@@ -423,7 +425,9 @@ fun MainActivity.runPlan(plan: WorkoutPlan, coach: Boolean = false) {
                 mv?.let { body.addView(it) }
                 body.addView(big("Serie ${setI + 1} di ${e.sets}", 18f, col(R.color.muted)))
                 if (e.kg > 0) body.addView(big("${if (e.kg % 1.0 == 0.0) e.kg.toInt() else e.kg} kg", 16f, col(R.color.muted)))
-                say("${e.name}. Serie ${setI + 1} di ${e.sets}. " + if (e.seconds > 0) "${e.seconds} secondi." else "${e.reps} ripetizioni.")
+                val cue = move?.let { MoveInfos.of(it.id).cue }.orEmpty()
+                say("${e.name}. Serie ${setI + 1} di ${e.sets}. " + (if (e.seconds > 0) "${e.seconds} secondi." else "${e.reps} ripetizioni.") + if (setI == 0 && cue.isNotBlank()) " $cue." else "")
+                if (cue.isNotBlank()) body.addView(TextView(this).apply { text = "💡 $cue"; textSize = 14f; gravity = Gravity.CENTER; setTextColor(col(R.color.muted)); setPadding(dp(8), 0, dp(8), dp(4)) })
                 // il modo (automatico o a mano) e il ritmo si cambiano qui, anche a metà scheda
                 fun modeRow() = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; setPadding(0, dp(10), 0, 0)
@@ -515,6 +519,25 @@ fun MainActivity.runPlan(plan: WorkoutPlan, coach: Boolean = false) {
                     body.addView(btn("Serie fatta ✓", secondary = true) { if (needsRest(e)) rest(e.restSec) else nextSet() })
                 }
                 body.addView(btn("Salta esercizio", secondary = true) { timer?.cancel(); stopSpeaking(); exI++; setI = 0; reps = 0; render() })
+                // cambia esercizio: la variante più facile o più difficile, con le stesse serie
+                val info = move?.let { MoveInfos.of(it.id) }
+                if (info?.easier != null || info?.harder != null) body.addView(LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL; setPadding(dp(8), dp(4), dp(8), 0)
+                    fun swap(label: String, id: String?) {
+                        val to = id?.let { Moves.byId(it) } ?: return
+                        addView(MaterialButton(this@runPlan, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                            text = label; isAllCaps = false; textSize = 13f
+                            setOnClickListener {
+                                timer?.cancel(); stopSpeaking()
+                                val nm = to.name + if (to.perSide) " (per lato)" else ""
+                                exs[exI] = if (to.timed && to.reps == 0 && e.seconds == 0) e.copy(name = nm, reps = 0, seconds = to.secs)
+                                    else if (!to.timed && e.seconds > 0) e.copy(name = nm, reps = to.reps.coerceAtLeast(8), seconds = 0) else e.copy(name = nm)
+                                reps = 0; toast("Ora: ${to.name}"); render()
+                            }
+                        }, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(dp(4), 0, dp(4), 0) })
+                    }
+                    swap("⬇ Più facile", info!!.easier); swap("⬆ Più difficile", info.harder)
+                })
                 body.addView(modeRow())
                 if (auto && e.seconds == 0) body.addView(tempoRow())
                 body.addView(voiceBtn())

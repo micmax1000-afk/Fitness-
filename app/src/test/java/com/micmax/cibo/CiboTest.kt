@@ -290,4 +290,60 @@ class TrainingTest {
         assertTrue(Coach.errorText(429, null).contains("limite"))
         assertTrue(Coach.systemPrompt("x").contains("Squat con salto"))
     }
+
+    @Test fun moveInfos() {
+        Moves.ALL.forEach { m ->
+            val info = MoveInfos.ALL[m.id]
+            assertNotNull(m.id, info)
+            assertTrue("${m.id} passi", info!!.steps.size in 2..6); assertTrue("${m.id} errori", info.mistakes.isNotEmpty())
+            assertTrue("${m.id} muscoli", info.primary.isNotEmpty() && (info.primary + info.secondary).all { it in MoveInfos.MUSCLES })
+            assertTrue("${m.id} consiglio", info.cue.isNotBlank())
+            listOfNotNull(info.easier, info.harder).forEach { assertNotNull("${m.id} → $it", Moves.byId(it)) }
+            m.equip.forEach { assertTrue("${m.id} $it", it in MoveInfos.EQUIPMENT) }
+            assertTrue(info.space in 0..2)
+        }
+        assertTrue(MoveInfos.photoUrl("Plank", 0).endsWith("/exercises/Plank/0.jpg"))
+        assertTrue(MoveInfos.muscleWikiUrl("Push-up").contains("musclewiki"))
+    }
+
+    @Test fun trainingOptions() {
+        val tiny = Moves.Opts(noJumps = true, spaceCap = 0)
+        for (g in Moves.Goal.values()) for (lv in 0..2) {
+            val p = Moves.generate(g, 15, lv, 3L, opts = tiny)
+            assertTrue("$g $lv vuota", p.exercises.isNotEmpty())
+            p.exercises.forEach { e -> val m = Moves.find(e.name)!!; assertTrue("$g ${m.id}", Moves.allowed(m, tiny)) }
+        }
+        val knees = Moves.Opts(avoid = setOf("ginocchia"))
+        Moves.generate(Moves.Goal.LEGS, 20, 1, 4L, opts = knees).exercises.forEach { e -> assertFalse(e.name, "ginocchia" in MoveInfos.of(Moves.find(e.name)!!.id).stress) }
+        // senza attrezzi niente manubri; con i manubri si usano
+        assertTrue(Moves.generate(Moves.Goal.UPPER, 20, 1, 5L).exercises.none { Moves.find(it.name)!!.equip.isNotEmpty() })
+        assertTrue(Moves.generate(Moves.Goal.UPPER, 20, 1, 5L, opts = Moves.Opts(equip = setOf("manubri"))).exercises.any { "manubri" in Moves.find(it.name)!!.equip })
+    }
+
+    @Test fun personalAndFitTest() {
+        val old = Coach.personal(Body(age = 70)); assertTrue(old.noJumps); assertEquals(1, old.maxLevel)
+        assertTrue(Coach.personal(Body(bmi = 32.0)).noJumps)
+        assertEquals(2, Coach.personal(Body(age = 30, bmi = 22.0, avgSteps = 9000.0)).maxLevel)
+        val o = Coach.opts(CoachPlan(space = 2, quiet = true, equip = listOf("manubri"), avoid = listOf("polsi")))
+        assertEquals(0, o.spaceCap); assertTrue(o.noJumps); assertEquals(setOf("manubri"), o.equip); assertEquals(setOf("polsi"), o.avoid)
+        assertEquals(2, Coach.opts(CoachPlan()).spaceCap)
+        val r = FitResult(0, 30, 45, 90)
+        assertEquals(2, FitTest.levels(r, Body(age = 30, sex = "m"))["overall"])
+        assertEquals(0, FitTest.levels(FitResult(0, 3, 15, 15), Body(age = 30))["overall"])
+        assertEquals(2, FitTest.levels(FitResult(0, 12, 32, 50), Body(age = 66, sex = "f"))["overall"])   // a 66 anni sono ottimi risultati
+        assertEquals(listOf("+5 flessioni", "−3 squat"), FitTest.progress(FitResult(0, 10, 30, 60), FitResult(1, 15, 27, 60)))
+    }
+
+    @Test fun aiProgram() {
+        val text = "Ecco il programma.\n```json\n{\"settimane\": [{\"allenamenti\": [{\"nome\": \"A\", \"esercizi\": [{\"nome\": \"Squat\", \"serie\": 3, \"ripetizioni\": 10}]}, {\"nome\": \"B\", \"esercizi\": [{\"nome\": \"Plank\", \"serie\": 2, \"secondi\": 30}]}]}, {\"allenamenti\": [{\"nome\": \"C\", \"esercizi\": [{\"nome\": \"Crunch\", \"serie\": 2, \"ripetizioni\": 15}]}]}]}\n```"
+        val plans = Coach.parseProgram(text)!!
+        assertEquals(listOf("🤖 A", "🤖 B", "🤖 C"), plans.map { it.name })
+        val monday = java.time.LocalDate.of(2026, 11, 16)
+        val prog = Coach.AiProgram(monday.toEpochDay(), 2, plans)
+        assertEquals("🤖 A", Coach.fromProgram(prog, monday.plusDays(1))?.name)     // martedì: primo giorno con 2 a settimana
+        assertNull(Coach.fromProgram(prog, monday))                                  // lunedì riposo
+        assertEquals("🤖 C", Coach.fromProgram(prog, monday.plusDays(8))?.name)      // settimana 2
+        assertNull(Coach.parseProgram("niente"))
+        assertTrue(Coach.programRequest(CoachPlan(), "niente salti").contains("4 settimane"))
+    }
 }

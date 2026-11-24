@@ -85,6 +85,9 @@ object Selftest {
                 "coachchat" -> a.openCoachChat()
                 "challenges" -> a.openChallenges()
                 "challenge" -> a.runChallenge(Challenges.ALL[0])
+                "fittest" -> a.openFitTest()
+                "moveinfo" -> Moves.byId("squat")?.let { a.showMove(it) }
+                "equip" -> Moves.byId("trazioni")?.let { a.showMove(it) }
                 "acts" -> a.openActs()
                 "hc" -> a.openHcConnect()
                 else -> {}

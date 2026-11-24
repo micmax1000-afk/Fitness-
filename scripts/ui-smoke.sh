@@ -52,7 +52,7 @@ AQ=$(adb logcat -d -s CIBO_SELFTEST:* | grep -o 'ACQUA.*' | tail -1)
 echo "Acqua: $AQ"
 [ "$AQ" = "ACQUA accesi=5 ririaccesi=5 spenti=0" ] || { echo "::error::I promemoria per bere non tornano ($AQ)"; exit 1; }
 
-for a in steps sleep train plans runplan generator moves coach coachchat challenges challenge tabata acts hc body meds visits emergency report diary water calc recipes recipe cooking menu shopping settings web; do
+for a in steps sleep train plans runplan generator moves coach coachchat challenges challenge fittest moveinfo equip tabata acts hc body meds visits emergency report diary water calc recipes recipe cooking menu shopping settings web; do
   start --es action $a
   shot "02-$a" 6
   alive || { echo "::error::L'app si e' chiusa nella schermata $a"; why; exit 1; }

@@ -181,3 +181,27 @@ fun Context.emptyState(parent: LinearLayout, emoji: String, title: String, text:
         if (button != null && onClick != null) addView(primaryButton(button, onClick).apply { (layoutParams as LinearLayout.LayoutParams).apply { width = -2; topMargin = dp(18); gravity = Gravity.CENTER_HORIZONTAL }; setPadding(dp(28), dp(13), dp(28), dp(13)) })
     }, LinearLayout.LayoutParams(-1, -2))
 }
+
+// ======================= muscoli =======================
+
+/** La sagoma davanti e dietro, con i muscoli principali (pieni) e secondari (chiari) dell'esercizio. */
+class MuscleMapView(c: Context, private val primary: Set<String>, private val secondary: Set<String>) : View(c) {
+    private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val label = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; color = c.col(R.color.muted) }
+    private val r = RectF()
+    private val accent = c.col(R.color.accent)
+    private val base = c.col(R.color.track)
+    override fun onDraw(cv: Canvas) {
+        val k = minOf(width / 214f, height / 142f); if (k <= 0) return
+        cv.save(); cv.translate((width - 214f * k) / 2, 0f); cv.scale(k, k)
+        label.textSize = 7f
+        cv.drawText("davanti", 50f, 141f, label); cv.drawText("dietro", 164f, 141f, label)
+        for (z in MuscleMap.ZONES) {
+            val ox = if (z.back) 114f else 0f
+            p.color = when { z.key.isNotEmpty() && z.key in primary -> accent; z.key.isNotEmpty() && z.key in secondary -> (accent and 0x00FFFFFF) or 0x66000000; else -> base }
+            r.set(ox + z.x, z.y, ox + z.x + z.w, z.y + z.h)
+            if (z.oval) cv.drawOval(r, p) else cv.drawRoundRect(r, z.r, z.r, p)
+        }
+        cv.restore()
+    }
+}

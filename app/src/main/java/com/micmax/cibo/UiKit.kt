@@ -134,15 +134,22 @@ fun Context.progressBar(frac: Double, color: Int, heightDp: Int = 10): View = an
 object Img {
     private val cache = object : android.util.LruCache<String, android.graphics.Bitmap>(12) {}
     private val exec = java.util.concurrent.Executors.newFixedThreadPool(2)
-    fun load(url: String, into: android.widget.ImageView) {
+    /** [onFail]: chiamato (sul thread principale) se la foto non si scarica, per esempio senza internet. */
+    fun load(url: String, into: android.widget.ImageView, onFail: (() -> Unit)? = null) {
         into.tag = url
         cache.get(url)?.let { into.setImageBitmap(it); return }
+        // le foto scaricate restano sul telefono (cartella della cache): la seconda volta si vedono anche senza internet
+        val file = java.io.File(java.io.File(into.context.cacheDir, "img").apply { mkdirs() }, Integer.toHexString(url.hashCode()) + ".img")
         exec.execute {
-            val b = runCatching {
+            val b = runCatching { if (file.exists()) android.graphics.BitmapFactory.decodeFile(file.path) else null }.getOrNull() ?: runCatching {
                 val c = java.net.URL(url).openConnection() as java.net.HttpURLConnection
                 c.connectTimeout = 10000; c.readTimeout = 15000
-                c.inputStream.use { android.graphics.BitmapFactory.decodeStream(it) }
-            }.getOrNull() ?: return@execute
+                if (c.responseCode !in 200..299) return@runCatching null
+                val bytes = c.inputStream.use { it.readBytes() }
+                runCatching { file.writeBytes(bytes) }
+                android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            }.getOrNull()
+            if (b == null) { if (onFail != null) into.post { if (into.tag == url) onFail() }; return@execute }
             cache.put(url, b)
             into.post { if (into.tag == url) into.setImageBitmap(b) }
         }
