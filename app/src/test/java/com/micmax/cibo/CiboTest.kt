@@ -180,4 +180,170 @@ class TrainingTest {
         assertEquals(d, Gson().fromJson(Gson().toJson(d), Backup.Data::class.java))
         assertEquals("7 h", Health.fmt(Measure("s", "sonno", 7.0, null, 3)))
     }
+
+    @Test fun movesCatalogue() {
+        assertEquals("plank-laterale", Moves.find("Plank laterale (per lato)")?.id)
+        assertEquals("plank", Moves.find("Plank")?.id)
+        assertEquals("squat-profondo", Moves.find("Squat profondo tenuto")?.id)
+        assertEquals("flessori", Moves.find("Allungamento dei fianchi")?.id)
+        assertEquals("gatto", Moves.find("GATTO-CAMMELLO")?.id)
+        assertNull(Moves.find("Panca piana"))
+        Fitness.PRESETS.flatMap { it.exercises }.forEach { assertNotNull(it.name, Moves.find(it.name)) }
+        assertEquals(Moves.ALL.size, Moves.ALL.map { it.id }.toSet().size)
+        // ogni disegno resta dentro il riquadro e tocca il pavimento
+        Moves.ALL.forEach { m ->
+            for (k in 0 until m.frames.size * 6) {
+                val o = Moves.figure(m, k / 6f)
+                for (i in 0 until Moves.SPINE) {
+                    assertTrue("${m.id} x", o[i * 2] in -1f..101f); assertTrue("${m.id} y", o[i * 2 + 1] in -1f..(Moves.FLOOR + 0.01f))
+                }
+            }
+        }
+    }
+
+    @Test fun generatedPlans() {
+        for (g in Moves.Goal.values()) for (lv in 0..2) for (min in listOf(5, 10, 20, 45)) {
+            val p = Moves.generate(g, min, lv, 7L)
+            assertTrue("$g $lv $min vuota", p.exercises.isNotEmpty())
+            assertTrue("$g $lv $min: ${Fitness.planMinutes(p)} min", Fitness.planMinutes(p) in (min * 3 / 4)..(min + 6))
+            p.exercises.forEach { e -> assertNotNull(e.name, Moves.find(e.name)); assertTrue(e.sets > 0); assertTrue(e.reps > 0 || e.seconds > 0) }
+            // la scheda si può riscrivere e rileggere come quelle fatte a mano
+            assertEquals(p.exercises, Fitness.parseExercises(p.exercises.joinToString("\n") { Fitness.exerciseText(it) }))
+            if (lv == 0) assertTrue(p.exercises.none { "jump" in (Moves.find(it.name)?.tags ?: emptySet()) })
+        }
+        assertEquals(Moves.generate(Moves.Goal.CORE, 20, 1, 5L).exercises, Moves.generate(Moves.Goal.CORE, 20, 1, 5L).exercises)
+    }
+
+    @Test fun icons() {
+        val need = mapOf('M' to 2, 'L' to 2, 'H' to 1, 'V' to 1, 'C' to 6, 'Q' to 4, 'Z' to 0, 'O' to 3, 'R' to 5)
+        Icons.PATHS.forEach { (k, d) ->
+            val cmds = Icons.commands(d)
+            assertTrue(k, cmds.isNotEmpty() && cmds[0].first.uppercaseChar() in setOf('M', 'O', 'R'))
+            cmds.forEach { (c, n) -> val m = need[c.uppercaseChar()]!!; assertTrue("$k $c ${n.size}", if (m == 0) n.isEmpty() else n.size % m == 0 && n.isNotEmpty()) }
+            // tutto dentro la griglia 24×24
+            cmds.filter { it.first.isUpperCase() && it.first !in setOf('O', 'R') }.forEach { (_, n) -> n.forEach { v -> assertTrue("$k $v", v in -0.5f..24.5f) } }
+        }
+        assertTrue(Icons.has("⚖️")); assertTrue(Icons.has("🏋️")); assertTrue(Icons.has("🏋️\u200D♀️")); assertTrue(Icons.has("2️⃣"))
+        assertEquals("2", Icons.digit("2️⃣")); assertFalse(Icons.has("🫁"))
+    }
+
+    @Test fun autoCount() {
+        val squat = Moves.find("Squat"); val jj = Moves.find("Jumping jack")
+        assertEquals(3.0, Moves.repSeconds(squat), 0.001)
+        assertTrue(Moves.repSeconds(jj) < Moves.repSeconds(squat))
+        assertEquals(1.5, Moves.repSeconds(squat, 0.5), 0.001); assertEquals(6.0, Moves.repSeconds(squat, 2.0), 0.001)
+        assertEquals(6.0, Moves.repSeconds(squat, 9.0), 0.001)          // oltre il massimo resta al massimo
+        assertEquals(0 to 5, Moves.autoState(0, 12, 3000))               // pronti
+        assertEquals(0 to 1, Moves.autoState(4500, 12, 3000))            // … 1
+        assertEquals(0 to 0, Moves.autoState(5000, 12, 3000))            // via
+        assertEquals(2 to 0, Moves.autoState(5000 + 6500, 12, 3000))     // due ripetizioni fatte
+        assertEquals(12 to 0, Moves.autoState(999_999, 12, 3000))        // mai più di quelle della serie
+    }
+
+    @Test fun challenges() {
+        Challenges.ALL.forEach { ch ->
+            ch.items.forEach { assertNotNull("${ch.id} ${it.moveId}", it.move) }
+            assertEquals(ch.rounds * ch.items.size, ch.steps().size)
+            assertTrue(ch.estMinutes() in 2..40)
+        }
+        assertEquals(Challenges.ALL.size, Challenges.ALL.map { it.id }.toSet().size)
+        assertEquals("1:05", Challenges.clock(65_000)); assertEquals("1:00:01", Challenges.clock(3_601_000))
+    }
+
+    @Test fun coachProgram() {
+        val start = java.time.LocalDate.of(2026, 11, 16)   // un lunedì
+        val p = CoachPlan("forza", 3, 20, 0.0, false, start.toEpochDay())
+        val w = Coach.weekPlan(p, start.plusDays(2))
+        assertEquals(7, w.size); assertEquals(3, w.count { it.goal != null })
+        assertEquals(listOf(0, 2, 4), w.mapIndexedNotNull { i, d -> if (d.goal != null) i else null })
+        assertEquals(1, Coach.week(p, start)); assertEquals(2, Coach.week(p, start.plusDays(7)))
+        assertTrue(Coach.minutesFor(p, 3) > Coach.minutesFor(p, 1)); assertTrue(Coach.minutesFor(p, 4) < p.minutes)   // la quarta settimana è leggera
+        for (n in 1..7) assertEquals(n, Coach.trainingDays(n).toSet().size)
+        // «resistenza»: l'ultimo giorno è contro il tempo
+        assertNotNull(Coach.weekPlan(p.copy(goal = "resistenza"), start).last { it.goal != null }.challenge)
+        // facile alza il livello, difficile lo abbassa, sempre tra 0 e 2
+        assertEquals(1, Coach.level(Coach.feedback(Coach.feedback(p, 0), 0)))
+        assertEquals(0.0, Coach.feedback(p, 2).level, 0.001)
+        // richieste del giorno
+        val day = w.first { it.goal != null }
+        assertTrue(Fitness.planMinutes(Coach.todayPlan(p, day, setOf(Coach.Tweak.SHORT), null, 1L)) <= 16)
+        val back = Coach.todayPlan(p, day, setOf(Coach.Tweak.BACK), null, 1L)
+        assertTrue(back.exercises.none { "jump" in (Moves.find(it.name)?.tags ?: emptySet()) })
+        assertTrue(Coach.todayPlan(p, day, emptySet(), 5.0, 1L).exercises.isNotEmpty())   // dormito poco: più leggera ma c'è
+    }
+
+    @Test fun coachAi() {
+        val reply = "Ecco una scheda per le gambe.\n```json\n{\"nome\": \"Gambe veloci\", \"esercizi\": [{\"nome\": \"squat\", \"serie\": 3, \"ripetizioni\": 12, \"riposo\": 40}, {\"nome\": \"Plank\", \"serie\": 2, \"ripetizioni\": 0, \"secondi\": 30}, {\"nome\": \"Affondi\", \"serie\": 99, \"ripetizioni\": 10}]}\n```"
+        val plan = Coach.parsePlan(reply)!!
+        assertEquals("🤖 Gambe veloci", plan.name)
+        assertEquals(listOf("Squat", "Plank", "Affondi"), plan.exercises.map { it.name })
+        assertEquals(30, plan.exercises[1].seconds); assertEquals(0, plan.exercises[1].reps)
+        assertEquals(10, plan.exercises[2].sets)   // tenuto nei limiti
+        assertEquals("Ecco una scheda per le gambe.", Coach.withoutPlan(reply))
+        assertNull(Coach.parsePlan("Bevi acqua e dormi bene."))
+        val req = org.json.JSONObject(Coach.request("m", "sys", listOf("user" to "ciao")))
+        assertEquals("system", req.getJSONArray("messages").getJSONObject(0).getString("role"))
+        assertEquals("ciao", req.getJSONArray("messages").getJSONObject(1).getString("content"))
+        assertEquals("Ok", Coach.replyText("""{"choices":[{"message":{"role":"assistant","content":" Ok "}}]}"""))
+        assertNull(Coach.replyText("{}"))
+        assertTrue(Coach.errorText(401, """{"error":{"message":"Invalid API Key"}}""").contains("chiave"))
+        assertTrue(Coach.errorText(429, null).contains("limite"))
+        assertTrue(Coach.systemPrompt("x").contains("Squat con salto"))
+    }
+
+    @Test fun moveInfos() {
+        Moves.ALL.forEach { m ->
+            val info = MoveInfos.ALL[m.id]
+            assertNotNull(m.id, info)
+            assertTrue("${m.id} passi", info!!.steps.size in 2..6); assertTrue("${m.id} errori", info.mistakes.isNotEmpty())
+            assertTrue("${m.id} muscoli", info.primary.isNotEmpty() && (info.primary + info.secondary).all { it in MoveInfos.MUSCLES })
+            assertTrue("${m.id} consiglio", info.cue.isNotBlank())
+            listOfNotNull(info.easier, info.harder).forEach { assertNotNull("${m.id} → $it", Moves.byId(it)) }
+            m.equip.forEach { assertTrue("${m.id} $it", it in MoveInfos.EQUIPMENT) }
+            assertTrue(info.space in 0..2)
+        }
+        assertTrue(MoveInfos.photoUrl("Plank", 0).endsWith("/exercises/Plank/0.jpg"))
+        assertTrue(MoveInfos.muscleWikiUrl("Push-up").contains("musclewiki"))
+    }
+
+    @Test fun trainingOptions() {
+        val tiny = Moves.Opts(noJumps = true, spaceCap = 0)
+        for (g in Moves.Goal.values()) for (lv in 0..2) {
+            val p = Moves.generate(g, 15, lv, 3L, opts = tiny)
+            assertTrue("$g $lv vuota", p.exercises.isNotEmpty())
+            p.exercises.forEach { e -> val m = Moves.find(e.name)!!; assertTrue("$g ${m.id}", Moves.allowed(m, tiny)) }
+        }
+        val knees = Moves.Opts(avoid = setOf("ginocchia"))
+        Moves.generate(Moves.Goal.LEGS, 20, 1, 4L, opts = knees).exercises.forEach { e -> assertFalse(e.name, "ginocchia" in MoveInfos.of(Moves.find(e.name)!!.id).stress) }
+        // senza attrezzi niente manubri; con i manubri si usano
+        assertTrue(Moves.generate(Moves.Goal.UPPER, 20, 1, 5L).exercises.none { Moves.find(it.name)!!.equip.isNotEmpty() })
+        assertTrue(Moves.generate(Moves.Goal.UPPER, 20, 1, 5L, opts = Moves.Opts(equip = setOf("manubri"))).exercises.any { "manubri" in Moves.find(it.name)!!.equip })
+    }
+
+    @Test fun personalAndFitTest() {
+        val old = Coach.personal(Body(age = 70)); assertTrue(old.noJumps); assertEquals(1, old.maxLevel)
+        assertTrue(Coach.personal(Body(bmi = 32.0)).noJumps)
+        assertEquals(2, Coach.personal(Body(age = 30, bmi = 22.0, avgSteps = 9000.0)).maxLevel)
+        val o = Coach.opts(CoachPlan(space = 2, quiet = true, equip = listOf("manubri"), avoid = listOf("polsi")))
+        assertEquals(0, o.spaceCap); assertTrue(o.noJumps); assertEquals(setOf("manubri"), o.equip); assertEquals(setOf("polsi"), o.avoid)
+        assertEquals(2, Coach.opts(CoachPlan()).spaceCap)
+        val r = FitResult(0, 30, 45, 90)
+        assertEquals(2, FitTest.levels(r, Body(age = 30, sex = "m"))["overall"])
+        assertEquals(0, FitTest.levels(FitResult(0, 3, 15, 15), Body(age = 30))["overall"])
+        assertEquals(2, FitTest.levels(FitResult(0, 12, 32, 50), Body(age = 66, sex = "f"))["overall"])   // a 66 anni sono ottimi risultati
+        assertEquals(listOf("+5 flessioni", "−3 squat"), FitTest.progress(FitResult(0, 10, 30, 60), FitResult(1, 15, 27, 60)))
+    }
+
+    @Test fun aiProgram() {
+        val text = "Ecco il programma.\n```json\n{\"settimane\": [{\"allenamenti\": [{\"nome\": \"A\", \"esercizi\": [{\"nome\": \"Squat\", \"serie\": 3, \"ripetizioni\": 10}]}, {\"nome\": \"B\", \"esercizi\": [{\"nome\": \"Plank\", \"serie\": 2, \"secondi\": 30}]}]}, {\"allenamenti\": [{\"nome\": \"C\", \"esercizi\": [{\"nome\": \"Crunch\", \"serie\": 2, \"ripetizioni\": 15}]}]}]}\n```"
+        val plans = Coach.parseProgram(text)!!
+        assertEquals(listOf("🤖 A", "🤖 B", "🤖 C"), plans.map { it.name })
+        val monday = java.time.LocalDate.of(2026, 11, 16)
+        val prog = Coach.AiProgram(monday.toEpochDay(), 2, plans)
+        assertEquals("🤖 A", Coach.fromProgram(prog, monday.plusDays(1))?.name)     // martedì: primo giorno con 2 a settimana
+        assertNull(Coach.fromProgram(prog, monday))                                  // lunedì riposo
+        assertEquals("🤖 C", Coach.fromProgram(prog, monday.plusDays(8))?.name)      // settimana 2
+        assertNull(Coach.parseProgram("niente"))
+        assertTrue(Coach.programRequest(CoachPlan(), "niente salti").contains("4 settimane"))
+    }
 }

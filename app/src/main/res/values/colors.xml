@@ -6,4 +6,6 @@
     <color name="stroke">#FFD5DCEB</color>
     <color name="accent">#FF2EA66A</color>
     <color name="icbg">#FFE3F6EA</color>
+    <color name="track">#FFE7ECF5</color>
+    <color name="onaccent">#FFFFFFFF</color>
 </resources>

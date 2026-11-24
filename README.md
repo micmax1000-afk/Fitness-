@@ -1,6 +1,6 @@
 # Benessere e cibo
 
-App Android per il cibo, la cucina e la salute, senza AI: i dati restano sul telefono.
+App Android per il cibo, la cucina e la salute: i dati restano sul telefono. L'unica parte con l'AI (la chat del coach) è facoltativa e usa la tua chiave.
 
 - **Diario** del cibo (a mano, con codice a barre da Open Food Facts, o rimettendo un cibo mangiato di recente), calorie e macro del giorno
 - **Acqua** con obiettivo, bicchiere a scelta e promemoria per bere (5 al giorno)
@@ -13,9 +13,16 @@ App Android per il cibo, la cucina e la salute, senza AI: i dati restano sul tel
 - **Scheda d'emergenza**, a scelta visibile anche a schermo bloccato
 - **Referto per il medico** in PDF
 - **Passi e sonno** da Health Connect (l'app dell'orologio li condivide col telefono): obiettivo dei passi, sonno con fasi, promemoria per andare a letto, sonno inserito a mano
-- **Allenamento**: schede (serie, ripetizioni, riposo con cronometro, bip e voce), Tabata e intervalli, allenamenti inseriti a mano, obiettivo settimanale con serie di settimane
-- **Home «Oggi»** con calorie, acqua, passi, sonno, allenamenti della settimana e farmaci da prendere
-- **Tema** chiaro, scuro o come il telefono
+- **Allenamento**: schede (serie, ripetizioni contate in automatico a ritmo regolabile o toccando, riposo con cronometro, bip e voce), Tabata e intervalli, allenamenti inseriti a mano, obiettivo settimanale con serie di settimane
+- **Crea una scheda**: scegli stretching, mobilità, tutto il corpo, gambe, parte alta, addominali, cardio o schiena; durata e livello. L'app compone la scheda dal suo catalogo (riscaldamento, esercizi, allungamenti finali), sul telefono e senza internet; «Un'altra» la rifà diversa
+- **Coach**: programma di più settimane (obiettivo, giorni, minuti) che cresce ogni settimana e si adatta con «Facile / Giusta / Difficile», al sonno e alle richieste del giorno (poco tempo, mal di schiena, niente salti, stanco)
+- **Scrivi al coach**: chat con l'AI usando la propria chiave di Groq, Google Gemini o NVIDIA (se uno non risponde si passa al successivo); la chiave resta sul telefono, esclusa da backup ed esportazione; al servizio vanno solo allenamenti, passi e sonno (età e peso solo se lo si sceglie). Le schede proposte si fanno subito o si salvano
+- **Su misura**: test di forma guidato (flessioni, squat, plank, battito), età, peso, passi e battito a riposo adattano livello e esercizi; attrezzi che hai (manubri, kettlebell, elastico, corda, sbarra, sedia), spazio in casa, modalità silenziosa e parti del corpo da proteggere; programma di 4 settimane fatto con l'AI
+- **Scheda completa di ogni esercizio**: passi, errori da evitare, respirazione, consiglio detto a voce, muscoli lavorati sulla sagoma, varianti più facile e più difficile (si cambiano anche durante la scheda), foto libere di free-exercise-db (pubblico dominio) e ricerca del video su MuscleWiki
+- **Contro il tempo**: allenamenti a giri da finire il prima possibile, con record personale
+- **Esercizi con il disegno**: oltre 40 esercizi con l'omino animato che mostra il movimento e la spiegazione; il disegno compare anche durante la scheda
+- **Home «Oggi»** con tre anelli (calorie, acqua, passi), sonno, allenamenti della settimana e farmaci da prendere
+- **Tema** chiaro, scuro o come il telefono; icone disegnate dall'app, uguali su tutti i telefoni
 - **Esporta / Importa**: un file con tutto. «Importa» legge anche i dati di Web Launcher (stessi nomi dei campi)
 
 ## Costruzione

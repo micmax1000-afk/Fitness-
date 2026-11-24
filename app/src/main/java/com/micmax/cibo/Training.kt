@@ -114,6 +114,11 @@ object Fitness {
     fun clock(seconds: Int) = "%d:%02d".format(seconds / 60, seconds % 60)
 
     // ---------- opzioni ----------
+    /** Conteggio automatico delle ripetizioni (senza toccare) e il suo ritmo (0 lento, 1 normale, 2 veloce). */
+    fun auto(c: Context) = prefs(c).getBoolean("auto", true)
+    fun setAuto(c: Context, on: Boolean) = prefs(c).edit().putBoolean("auto", on).apply()
+    fun tempo(c: Context) = prefs(c).getFloat("tempo", 1f).toDouble()
+    fun setTempo(c: Context, v: Double) = prefs(c).edit().putFloat("tempo", v.coerceIn(Moves.TEMPO_MIN, Moves.TEMPO_MAX).toFloat()).apply()
     fun voice(c: Context) = prefs(c).getBoolean("voice", true)
     fun setVoice(c: Context, on: Boolean) = prefs(c).edit().putBoolean("voice", on).apply()
     fun tabataSetting(c: Context, key: String, def: Int) = prefs(c).getInt("tb_$key", def)

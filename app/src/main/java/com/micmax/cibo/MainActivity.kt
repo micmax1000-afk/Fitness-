@@ -77,6 +77,7 @@ class MainActivity : AppCompatActivity() {
     fun pop() {
         if (stack.size <= 1) return
         stack.removeLast().onClose?.invoke()
+        keepChosenTheme()
         host.removeAllViews(); host.addView(stack.last().view, FrameLayout.LayoutParams(-1, -1))
         stack.last().refresh?.invoke()
     }
@@ -86,12 +87,18 @@ class MainActivity : AppCompatActivity() {
     fun header(title: String, action: String?, onAction: (() -> Unit)?, back: Boolean = true, onBack: (() -> Unit)? = null): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(4), dp(8), dp(12), dp(8))
         if (back) addView(TextView(this@MainActivity).apply { text = "‹"; textSize = 32f; gravity = Gravity.CENTER; setTextColor(col(R.color.text)); contentDescription = "Indietro"; setOnClickListener { (onBack ?: { pop() })() } }, LinearLayout.LayoutParams(dp(48), dp(44)))
+        // titoli lunghi: più piccoli e su due righe, invece di tagliarli
         addView(TextView(this@MainActivity).apply {
-            text = title; textSize = 19f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(col(R.color.text)); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+            text = title; textSize = if (title.length > 22) 16.5f else 19f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(col(R.color.text))
+            maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END; setLineSpacing(0f, 0.95f)
             if (!back) setPadding(dp(12), 0, 0, 0)
         }, LinearLayout.LayoutParams(0, -2, 1f))
-        if (action != null) addView(TextView(this@MainActivity).apply {
-            text = action; textSize = 15f; setTextColor(android.graphics.Color.WHITE); setTypeface(typeface, android.graphics.Typeface.BOLD)
+        if (action != null && Icons.has(action)) addView(iconBox(action, 44).apply {
+            background = roundBg(col(R.color.card), 22, col(R.color.stroke)); isClickable = true; contentDescription = "Impostazioni"
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES; setOnClickListener { onAction?.invoke() }
+        })
+        else if (action != null) addView(TextView(this@MainActivity).apply {
+            text = action; textSize = 15f; setTextColor(col(R.color.onaccent)); setTypeface(typeface, android.graphics.Typeface.BOLD)
             background = roundBg(col(R.color.accent), 18); setPadding(dp(16), dp(8), dp(16), dp(8)); setOnClickListener { onAction?.invoke() }
         })
     }
@@ -136,6 +143,21 @@ class MainActivity : AppCompatActivity() {
         recreate()
     }
 
+    /**
+     * Android, la prima volta che apre una pagina web (WebView), rimette nelle risorse dell'app il tema del telefono:
+     * con «Chiaro» su un telefono scuro i colori diventavano metà chiari e metà scuri. Qui si rimette il tema scelto.
+     */
+    fun keepChosenTheme() {
+        val want = when (themeChoice()) { 1 -> android.content.res.Configuration.UI_MODE_NIGHT_NO; 2 -> android.content.res.Configuration.UI_MODE_NIGHT_YES; else -> return }
+        val mask = android.content.res.Configuration.UI_MODE_NIGHT_MASK
+        val cfg = android.content.res.Configuration(resources.configuration)
+        if (cfg.uiMode and mask == want) return
+        cfg.uiMode = (cfg.uiMode and mask.inv()) or want
+        @Suppress("DEPRECATION") resources.updateConfiguration(cfg, resources.displayMetrics)
+    }
+
+    override fun onResume() { super.onResume(); keepChosenTheme() }
+
     var tts: android.speech.tts.TextToSpeech? = null
     fun speak(text: String) {
         if (tts == null) { tts = android.speech.tts.TextToSpeech(this) { st -> if (st == android.speech.tts.TextToSpeech.SUCCESS) { tts?.language = Locale.ITALIAN; tts?.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "step") } }; return }
@@ -155,7 +177,7 @@ class MainActivity : AppCompatActivity() {
             items.forEach { (e, t, f) ->
                 grid.addView(LinearLayout(this).apply {
                     orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; background = roundBg(col(R.color.card), 16, col(R.color.stroke)); setPadding(dp(4), dp(14), dp(4), dp(12))
-                    addView(TextView(this@MainActivity).apply { text = e; textSize = 26f; gravity = Gravity.CENTER })
+                    addView(iconBox(e, 46).apply { (layoutParams as LinearLayout.LayoutParams).apply { gravity = Gravity.CENTER_HORIZONTAL; bottomMargin = dp(6) } })
                     addView(TextView(this@MainActivity).apply { text = t; textSize = 13f; gravity = Gravity.CENTER; setTextColor(col(R.color.text)); setTypeface(typeface, android.graphics.Typeface.BOLD) })
                     setOnClickListener { f() }
                 }, android.widget.GridLayout.LayoutParams().apply { width = 0; columnSpec = android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f); setMargins(dp(4), dp(4), dp(4), dp(4)) })
@@ -174,10 +196,16 @@ class MainActivity : AppCompatActivity() {
                 orientation = LinearLayout.VERTICAL; background = roundBg(col(R.color.card), 18, col(R.color.stroke)); setPadding(dp(16), dp(14), dp(16), dp(10))
                 layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) }
             }
-            card.addView(TextView(this).apply { text = "🍽 ${tot.kcal.toInt()}" + (target?.let { " / ${it.kcal}" } ?: "") + " kcal"; textSize = 20f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(col(R.color.text)) })
-            if (target != null) card.addView(progressBar(tot.kcal / target.kcal, if (tot.kcal > target.kcal * 1.1) RED else if (tot.kcal > target.kcal * 0.9) AMBER else GREEN))
-            card.addView(TextView(this).apply { text = "💧 $ml / $goal ml"; textSize = 17f; setTextColor(col(R.color.text)); setPadding(0, dp(8), 0, 0) })
-            card.addView(progressBar(ml.toDouble() / goal, BLUE))
+            // tre anelli: calorie, acqua, passi
+            val steps = Hc.today(snap)?.steps ?: 0L
+            val stepGoal = getSharedPreferences("cibo", MODE_PRIVATE).getInt("steps_goal", 8000)
+            val kcalColor = if (target == null) col(R.color.accent) else if (tot.kcal > target.kcal * 1.1) RED else if (tot.kcal > target.kcal * 0.9) AMBER else col(R.color.accent)
+            val rings = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(4), 0, dp(4)) }
+            fun ring(v: View) = rings.addView(v, LinearLayout.LayoutParams(0, -2, 1f))
+            ring(ringStat("Calorie", "${tot.kcal.toInt()}", target?.let { "di ${it.kcal}" } ?: "kcal", target?.let { tot.kcal / it.kcal } ?: 0.0, kcalColor) { openDiary() })
+            ring(ringStat("Acqua", if (ml >= 1000) String.format(Locale.ITALIAN, "%.1f l", ml / 1000.0) else "$ml ml", "di ${String.format(Locale.ITALIAN, "%.1f", goal / 1000.0)} l", ml.toDouble() / goal, BLUE) { openWater() })
+            ring(ringStat("Passi", if (steps > 0) String.format(Locale.ITALIAN, "%,d", steps) else "—", "di ${String.format(Locale.ITALIAN, "%,d", stepGoal)}", steps.toDouble() / stepGoal, 0xFFF59E0B.toInt()) { openSteps() })
+            card.addView(rings)
             val btns = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
             fun small(t: String, f: () -> Unit) = btns.addView(TextView(this).apply {
                 text = t; textSize = 14f; gravity = Gravity.CENTER; setTextColor(col(R.color.text)); background = roundBg(col(R.color.bg), 14, col(R.color.stroke))
@@ -187,16 +215,27 @@ class MainActivity : AppCompatActivity() {
             small("＋ Pasto") { addMealMenu() }
             card.addView(btns)
             body.addView(card)
-            // passi, sonno, allenamenti della settimana
-            val steps = Hc.today(snap)?.steps ?: 0L
+            // sonno e allenamenti della settimana
             val night = Hc.lastNight(snap)
             val manualSleep = Health.load(this).filter { it.type == "sonno" }.maxByOrNull { it.time }
             val sleepText = night?.let { Hc.duration(it.sleepMin) } ?: manualSleep?.takeIf { System.currentTimeMillis() - it.time < 36 * 3_600_000L }?.let { Hc.duration((it.v1 * 60).toLong()) } ?: "—"
             val n = Fitness.weekCount(Fitness.allTimes(this)); val wgoal = Fitness.weeklyGoal(this)
-            body.addView(statRow(
-                Triple("👟 Passi", if (steps > 0) String.format(Locale.ITALIAN, "%,d", steps) else "—", null),
-                Triple("😴 Sonno", sleepText, "ultima notte"),
-                Triple("🏋 Settimana", "$n / $wgoal", "allenamenti")))
+            body.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                fun tile(icon: String, label: String, value: String, sub: String, onClick: () -> Unit) = addView(LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(12), dp(12), dp(12), dp(12))
+                    background = roundBg(col(R.color.card), 16, col(R.color.stroke)); isClickable = true; setOnClickListener { onClick() }
+                    addView(iconBox(icon, 40).apply { (layoutParams as LinearLayout.LayoutParams).marginEnd = dp(10) })
+                    addView(LinearLayout(this@MainActivity).apply {
+                        orientation = LinearLayout.VERTICAL
+                        addView(TextView(this@MainActivity).apply { text = label; textSize = 12f; setTextColor(col(R.color.muted)) })
+                        addView(TextView(this@MainActivity).apply { text = value; textSize = 17f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(col(R.color.text)) })
+                        addView(TextView(this@MainActivity).apply { text = sub; textSize = 11.5f; setTextColor(col(R.color.muted)) })
+                    })
+                }, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(dp(3), 0, dp(3), 0) })
+                tile("😴", "Sonno", sleepText, "ultima notte") { openSleep() }
+                tile("🏋️", "Allenamenti", "$n / $wgoal", "questa settimana") { openTrain() }
+            })
             // farmaci di oggi
             val meds = Meds.load(this).filter { it.times.isNotEmpty() }
             if (meds.isNotEmpty()) {
@@ -221,7 +260,7 @@ class MainActivity : AppCompatActivity() {
                 Triple("📅", "Menu") { openMenu() }, Triple("🛒", "Spesa") { openShopping() }, Triple("🧮", "Fabbisogno") { openCalculator() }))
             sectionLabel(body, "MOVIMENTO")
             tiles(listOf(Triple("👟", "Passi") { openSteps() }, Triple("😴", "Sonno") { openSleep() }, Triple("🏋️", "Allenamento") { openTrain() },
-                Triple("🏋️‍♀️", "Schede") { openPlans() }, Triple("⏱", "Tabata") { openTabata() }, Triple("⌚", "Orologio") { openHcConnect() }))
+                Triple("🎯", "Coach") { openCoach() }, Triple("⏱", "Tabata") { openTabata() }, Triple("⌚", "Orologio") { openHcConnect() }))
             sectionLabel(body, "SALUTE")
             tiles(listOf(Triple("⚖️", "Peso e misure") { openBody() }, Triple("💊", "Farmaci") { openMeds() }, Triple("🩺", "Visite") { openVisits() },
                 Triple("🆘", "Emergenza") { openEmergency() }, Triple("📄", "Referto") { openReport() }))

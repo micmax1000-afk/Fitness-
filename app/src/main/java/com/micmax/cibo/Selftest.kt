@@ -79,6 +79,15 @@ object Selftest {
                 "plans" -> a.openPlans()
                 "runplan" -> a.runPlan(Fitness.PRESETS[2])
                 "tabata" -> a.openTabata()
+                "generator" -> a.openGenerator(Moves.Goal.STRETCH)
+                "moves" -> a.openMoves()
+                "coach" -> { CoachStore.plan(a) ?: CoachStore.save(a, CoachPlan()); a.openCoach() }
+                "coachchat" -> a.openCoachChat()
+                "challenges" -> a.openChallenges()
+                "challenge" -> a.runChallenge(Challenges.ALL[0])
+                "fittest" -> a.openFitTest()
+                "moveinfo" -> Moves.byId("squat")?.let { a.showMove(it) }
+                "equip" -> Moves.byId("trazioni")?.let { a.showMove(it) }
                 "acts" -> a.openActs()
                 "hc" -> a.openHcConnect()
                 else -> {}

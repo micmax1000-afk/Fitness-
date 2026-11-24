@@ -47,7 +47,7 @@ fun MainActivity.openBody(startType: String = "peso") {
             Health.TYPES.forEach { (k, v) ->
                 val active = k == type
                 tabs.addView(TextView(this).apply {
-                    text = v.first; textSize = 13f; setTextColor(if (active) android.graphics.Color.WHITE else col(R.color.text)); setPadding(dp(12), dp(7), dp(12), dp(7))
+                    text = v.first; textSize = 13f; setTextColor(if (active) col(R.color.onaccent) else col(R.color.text)); setPadding(dp(12), dp(7), dp(12), dp(7))
                     background = roundBg(if (active) col(R.color.accent) else col(R.color.card), 16, if (active) col(R.color.accent) else col(R.color.stroke))
                     layoutParams = LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(6) }
                     setOnClickListener { type = k; render() }
@@ -56,7 +56,7 @@ fun MainActivity.openBody(startType: String = "peso") {
             body.removeAllViews()
             val (label, _, two) = Health.TYPES[type]!!
             val list = Health.load(this).filter { it.type == type }.sortedBy { it.time }
-            if (list.isEmpty()) hintLabel(body, "Nessuna misurazione di ${label.substringAfter(' ').lowercase()}.\nTocca «Aggiungi».")
+            if (list.isEmpty()) emptyState(body, label.substringBefore(' '), "Nessuna misurazione di ${label.substringAfter(' ').lowercase()}", "Segnala ogni tanto: qui vedi il grafico e l'andamento, e puoi mandarlo al medico.", "Aggiungi la prima") { addMeasureDialog(type) { refreshTop() } }
             else {
                 val last = list.takeLast(30)
                 body.addView(TextView(this).apply { text = Health.fmt(list.last()); textSize = 34f; setTypeface(typeface, android.graphics.Typeface.BOLD); gravity = Gravity.CENTER; setTextColor(col(R.color.text)); setPadding(0, dp(6), 0, 0) })
@@ -75,13 +75,15 @@ fun MainActivity.openBody(startType: String = "peso") {
                 }
                 if (last.size >= 2) body.addView(LineChartView(this).apply {
                     series1 = last.map { it.v1 }; series2 = if (two) last.mapNotNull { it.v2 } else null
+                    labels = last.map { SimpleDateFormat("d MMM", Locale.ITALIAN).format(Date(it.time)) }; unit = Health.TYPES[type]?.second ?: ""
+                    if (type == "peso") Food.profile(this@openBody).heightCm.takeIf { it > 0 }?.let { h -> val (lo, hi) = Nutrition.healthyRange(h); bandLo = lo; bandHi = hi; bandLabel = "peso sano" }
                     color1 = if (two) 0xFFE53935.toInt() else col(R.color.accent); color2 = col(R.color.accent); textColor = col(R.color.muted); gridColor = col(R.color.stroke)
                     layoutParams = LinearLayout.LayoutParams(-1, dp(180)).apply { setMargins(dp(6), dp(12), dp(6), dp(4)) }
                 })
                 sectionLabel(body, "MISURAZIONI")
                 val f = SimpleDateFormat("EEE d MMM, HH:mm", Locale.ITALIAN)
                 list.reversed().take(60).forEach { m ->
-                    listRow(body, "", Health.fmt(m), f.format(Date(m.time)) + if (m.note.isNotBlank()) " · ${m.note}" else "",
+                    listRow(body, label.substringBefore(' '), Health.fmt(m), f.format(Date(m.time)) + if (m.note.isNotBlank()) " · ${m.note}" else "",
                         onRemove = { Health.save(this, Health.load(this).filter { it.id != m.id }); if (type == "peso") Health.syncWeight(this); render() }) {}
                 }
             }
@@ -115,7 +117,7 @@ fun MainActivity.openMeds() {
         fun render() {
             body.removeAllViews()
             val list = Meds.load(this)
-            if (list.isEmpty()) { hintLabel(body, "Nessun farmaco.\nAggiungine uno: ti ricordo gli orari e ti avviso quando le scorte stanno finendo."); return }
+            if (list.isEmpty()) { emptyState(body, "💊", "Nessun farmaco", "Aggiungine uno: ti ricordo gli orari e ti avviso quando le scorte stanno finendo."); return }
             list.forEach { m ->
                 val low = Meds.isLow(m)
                 val sub = buildList {
@@ -165,7 +167,7 @@ fun MainActivity.openVisits() {
         fun render() {
             body.removeAllViews()
             val all = Visits.load(this)
-            if (all.isEmpty()) { hintLabel(body, "Nessuna visita.\nAggiungine una: ti avviso la sera prima e due ore prima."); return }
+            if (all.isEmpty()) { emptyState(body, "🩺", "Nessuna visita", "Aggiungine una: ti avviso la sera prima e due ore prima."); return }
             val now = System.currentTimeMillis(); val f = SimpleDateFormat("EEE d MMM yyyy 'alle' HH:mm", Locale.ITALIAN)
             val next = all.filter { it.time >= now }; val past = all.filter { it.time < now }.reversed()
             if (next.isNotEmpty()) sectionLabel(body, "PROSSIME")
