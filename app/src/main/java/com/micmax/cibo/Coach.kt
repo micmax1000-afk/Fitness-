@@ -97,7 +97,7 @@ object Coach {
         "dimagrire" to ("Dimagrire" to listOf(Moves.Goal.CARDIO, Moves.Goal.FULL, Moves.Goal.CARDIO, Moves.Goal.LEGS, Moves.Goal.CORE)),
         "forza" to ("Più forza" to listOf(Moves.Goal.LEGS, Moves.Goal.UPPER, Moves.Goal.CORE, Moves.Goal.FULL)),
         "resistenza" to ("Più fiato e resistenza" to listOf(Moves.Goal.CARDIO, Moves.Goal.FULL, Moves.Goal.CARDIO, Moves.Goal.LEGS)),
-        "benessere" to ("Stare bene e sciolto" to listOf(Moves.Goal.MOBILITY, Moves.Goal.BACK, Moves.Goal.STRETCH, Moves.Goal.CORE)),
+        "benessere" to ("Stare bene e sciolto" to listOf(Moves.Goal.MOBILITY, Moves.Goal.BACK, Moves.Goal.BALANCE, Moves.Goal.STRETCH, Moves.Goal.CORE)),
     )
 
     /** In quali giorni della settimana allenarsi (lunedì = 0), ben distanziati. */
@@ -139,17 +139,17 @@ object Coach {
     fun level(p: CoachPlan) = p.level.roundToInt().coerceIn(0, 2)
 
     /** Gli adattamenti per te: (livello massimo, niente salti, spiegazioni da mostrare). */
-    data class Personal(val maxLevel: Int, val noJumps: Boolean, val notes: List<String>)
+    data class Personal(val maxLevel: Int, val noJumps: Boolean, val notes: List<String>, val balance: Boolean = false)
     fun personal(b: Body): Personal {
         var max = 2; var noJumps = false; val notes = mutableListOf<String>()
         b.age?.let { a ->
-            if (a >= 65) { max = minOf(max, 1); noJumps = true; notes += "Età: più equilibrio e mobilità, niente salti" }
+            if (a >= 65) { max = minOf(max, 1); noJumps = true; notes += "Età: ogni giorno un esercizio di equilibrio, niente salti" }
             else if (a >= 50) notes += "Età: riscaldamento e allungamenti sempre presenti"
         }
         b.bmi?.let { if (it >= 30) { noJumps = true; notes += "Peso: niente salti per proteggere le ginocchia, più cardio leggero" } else if (it < 18.5) notes += "Peso basso: più forza, poco cardio intenso" }
         b.avgSteps?.let { if (it in 1.0..3999.0) { max = minOf(max, 1); notes += "Ti muovi poco durante il giorno: si parte con calma" } }
         b.restHr?.let { if (it >= 85) { max = minOf(max, 1); notes += "Battito a riposo alto: intensità moderata (sentire il medico se resta così)" } }
-        return Personal(max, noJumps, notes)
+        return Personal(max, noJumps, notes, balance = (b.age ?: 0) >= 65)
     }
 
     /** Le scelte di attrezzi, spazio, silenzio e parti da proteggere, unite agli adattamenti per te. */
@@ -175,7 +175,14 @@ object Coach {
         if (Tweak.HARD in tweaks) { lv = (lv + 1).coerceAtMost(2); min += 5 }
         val base = opts(p, pers)
         val o = base.copy(noJumps = base.noJumps || Tweak.NO_JUMP in tweaks || Tweak.BACK in tweaks, avoid = if (Tweak.BACK in tweaks) base.avoid + "schiena" else base.avoid)
-        val plan = Moves.generate(goal, min, lv, seed, opts = o)
+        var plan = Moves.generate(goal, min, lv, seed, opts = o)
+        // dai 65 anni: un esercizio di equilibrio dopo il riscaldamento (per prevenire le cadute)
+        if (pers?.balance == true && goal != Moves.Goal.BALANCE) {
+            Moves.ALL.filter { "balance" in it.tags && Moves.allowed(it, o) }.shuffled(kotlin.random.Random(seed)).firstOrNull()?.let { m ->
+                val ex = Moves.toEx(m, 0, 1, 15, holdSecs = if (m.timed) 30 else null)
+                plan = plan.copy(exercises = plan.exercises.toMutableList().apply { add(minOf(2, size), ex) })
+            }
+        }
         return plan.copy(name = "🤖 Coach · " + plan.name.substringAfter(' '))
     }
 

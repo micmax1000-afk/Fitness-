@@ -205,3 +205,28 @@ class MuscleMapView(c: Context, private val primary: Set<String>, private val se
         cv.restore()
     }
 }
+
+// ======================= respirazione guidata =======================
+
+/** Un cerchio che si allarga in 4 secondi (inspira) e si stringe in 6 (espira); [onPhase] dice quando cambia. */
+class BreathView(c: Context, private val onPhase: (inhale: Boolean) -> Unit) : View(c) {
+    private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = (c.col(R.color.accent) and 0x00FFFFFF) or 0x33000000 }
+    private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = c.col(R.color.accent) }
+    private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; color = c.col(R.color.text); typeface = android.graphics.Typeface.DEFAULT_BOLD }
+    private val start = System.currentTimeMillis()
+    private var lastInhale: Boolean? = null
+    var running = true
+    override fun onDraw(cv: Canvas) {
+        val t = ((System.currentTimeMillis() - start) % 10_000L) / 1000f
+        val inhale = t < 4f
+        val f = if (inhale) t / 4f else 1f - (t - 4f) / 6f
+        val e = f * f * (3 - 2 * f)
+        val max = minOf(width, height) / 2f - 6f; val r = max * (0.45f + 0.55f * e)
+        cv.drawCircle(width / 2f, height / 2f, r, fill)
+        ring.strokeWidth = 4f * resources.displayMetrics.density; cv.drawCircle(width / 2f, height / 2f, r, ring)
+        text.textSize = 22f * resources.displayMetrics.density
+        cv.drawText(if (inhale) "Inspira" else "Espira", width / 2f, height / 2f + text.textSize / 3, text)
+        if (lastInhale != inhale) { lastInhale = inhale; onPhase(inhale) }
+        if (running && isShown) postInvalidateOnAnimation()
+    }
+}

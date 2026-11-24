@@ -168,7 +168,7 @@ fun MainActivity.showMove(m: Move) {
 fun MainActivity.openMoves() {
     openScreen("Esercizi") { body, _ ->
         hintLabel(body, "Tocca un esercizio per vedere come si fa. Nelle schede il disegno compare da solo se il nome somiglia a uno di questi.")
-        listOf("attrezzi" to "CON GLI ATTREZZI", "stretch" to "STRETCHING", "mobility" to "MOBILITÀ E RISCALDAMENTO", "legs" to "GAMBE E GLUTEI", "upper" to "PARTE ALTA", "core" to "ADDOMINALI E SCHIENA", "cardio" to "CARDIO").let { groups ->
+        listOf("attrezzi" to "CON GLI ATTREZZI", "balance" to "EQUILIBRIO", "stretch" to "STRETCHING", "mobility" to "MOBILITÀ E RISCALDAMENTO", "legs" to "GAMBE E GLUTEI", "upper" to "PARTE ALTA", "core" to "ADDOMINALI E SCHIENA", "cardio" to "CARDIO").let { groups ->
             val shown = HashSet<String>()
             groups.forEach { (tag, label) ->
                 val l = Moves.ALL.filter { (if (tag == "attrezzi") it.equip.isNotEmpty() else tag in it.tags) && it.id !in shown }

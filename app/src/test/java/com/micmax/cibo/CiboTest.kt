@@ -346,4 +346,17 @@ class TrainingTest {
         assertNull(Coach.parseProgram("niente"))
         assertTrue(Coach.programRequest(CoachPlan(), "niente salti").contains("4 settimane"))
     }
+
+    @Test fun balanceAndBreathing() {
+        val start = java.time.LocalDate.of(2026, 11, 16)
+        val p = CoachPlan("forma", 3, 20, 1.0, false, start.toEpochDay())
+        val day = Coach.weekPlan(p, start).first { it.goal != null }
+        val pers = Coach.personal(Body(age = 70))
+        assertTrue(pers.balance)
+        assertTrue(Coach.todayPlan(p, day, emptySet(), null, 1L, pers).exercises.any { "balance" in (Moves.find(it.name)?.tags ?: emptySet()) })
+        // gli allenamenti da 15 minuti in su finiscono con un minuto di respirazione
+        assertEquals("respiro", Moves.find(Moves.generate(Moves.Goal.FULL, 20, 1, 2L).exercises.last().name)?.id)
+        assertTrue(Moves.generate(Moves.Goal.BALANCE, 15, 0, 2L).exercises.any { "balance" in (Moves.find(it.name)?.tags ?: emptySet()) })
+        assertEquals(131, Moves.ALL.size)
+    }
 }
