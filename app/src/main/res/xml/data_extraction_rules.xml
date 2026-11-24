@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Backup nel cloud e passaggio a un telefono nuovo (Android 12 e successivi): tutto tranne le chiavi del coach AI -->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="sharedpref" path="." />
+        <include domain="file" path="." />
+        <exclude domain="sharedpref" path="coach_keys.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="sharedpref" path="." />
+        <include domain="file" path="." />
+        <exclude domain="sharedpref" path="coach_keys.xml" />
+    </device-transfer>
+</data-extraction-rules>

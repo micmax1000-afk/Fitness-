@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Backup di Android (fino ad Android 11): tutto tranne le chiavi del coach AI -->
+<full-backup-content>
+    <include domain="sharedpref" path="." />
+    <include domain="file" path="." />
+    <exclude domain="sharedpref" path="coach_keys.xml" />
+</full-backup-content>

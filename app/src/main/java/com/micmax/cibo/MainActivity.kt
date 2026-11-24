@@ -260,7 +260,7 @@ class MainActivity : AppCompatActivity() {
                 Triple("📅", "Menu") { openMenu() }, Triple("🛒", "Spesa") { openShopping() }, Triple("🧮", "Fabbisogno") { openCalculator() }))
             sectionLabel(body, "MOVIMENTO")
             tiles(listOf(Triple("👟", "Passi") { openSteps() }, Triple("😴", "Sonno") { openSleep() }, Triple("🏋️", "Allenamento") { openTrain() },
-                Triple("🏋️‍♀️", "Schede") { openPlans() }, Triple("⏱", "Tabata") { openTabata() }, Triple("⌚", "Orologio") { openHcConnect() }))
+                Triple("🎯", "Coach") { openCoach() }, Triple("⏱", "Tabata") { openTabata() }, Triple("⌚", "Orologio") { openHcConnect() }))
             sectionLabel(body, "SALUTE")
             tiles(listOf(Triple("⚖️", "Peso e misure") { openBody() }, Triple("💊", "Farmaci") { openMeds() }, Triple("🩺", "Visite") { openVisits() },
                 Triple("🆘", "Emergenza") { openEmergency() }, Triple("📄", "Referto") { openReport() }))

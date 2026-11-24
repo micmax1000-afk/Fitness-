@@ -224,7 +224,12 @@ fun MainActivity.openTrain() {
                 text = (if (n >= goal) "🎉 Obiettivo raggiunto! " else "Ancora ${goal - n} allenamenti. ") + if (streak > 0) "🔥 $streak ${if (streak == 1) "settimana" else "settimane"} di fila" else ""
                 textSize = 14f; gravity = Gravity.CENTER; setTextColor(col(R.color.muted))
             })
+            sectionLabel(body, "IL TUO COACH")
+            val cp = CoachStore.plan(this)
+            listRow(body, "🎯", "Coach", if (cp == null) "Un programma per te, che si adatta a come va: scegli obiettivo e giorni" else "${Coach.GOALS[cp.goal]?.first} · ${cp.days} giorni a settimana · livello ${Moves.LEVELS[Coach.level(cp)].lowercase()}") { openCoach() }
+            listRow(body, "💬", "Scrivi al coach", "Chat con l'AI (Gemini, Groq o NVIDIA, con la tua chiave)") { openCoachChat() }
             sectionLabel(body, "ALLENATI")
+            listRow(body, "⏱", "Contro il tempo", "Giri da finire il prima possibile, con il tuo record") { openChallenges() }
             listRow(body, "✨", "Crea una scheda", "Stretching, mobilità, gambe, addominali, cardio…: scegli tempo e livello") { openGenerator() }
             listRow(body, "🏋️", "Schede", "Serie, ripetizioni, riposo con cronometro e voce") { openPlans() }
             listRow(body, "📖", "Esercizi", "Come si fanno, con il disegno animato") { openMoves() }
@@ -320,7 +325,8 @@ private fun MainActivity.editPlan(p: WorkoutPlan?, done: () -> Unit) {
 private fun MainActivity.beepTone(): ToneGenerator? = runCatching { ToneGenerator(AudioManager.STREAM_MUSIC, 80) }.getOrNull()
 
 /** Fa la scheda serie per serie: ripetizioni da toccare o conto alla rovescia, riposo a tempo, bip e (a scelta) voce. */
-fun MainActivity.runPlan(plan: WorkoutPlan) {
+/** [coach]: scheda del coach, alla fine chiede com'è andata per regolare il livello. */
+fun MainActivity.runPlan(plan: WorkoutPlan, coach: Boolean = false) {
     var exI = 0; var setI = 0; var reps = 0
     var timer: CountDownTimer? = null
     val tone = beepTone()
@@ -404,6 +410,7 @@ fun MainActivity.runPlan(plan: WorkoutPlan) {
                 body.addView(big("Scheda completata!", 26f)); body.addView(note("Ottimo lavoro: registrato negli allenamenti della settimana."))
                 confetti()
                 body.addView(statRow(Triple("Durata", "$min min", null), Triple("Calorie", "~${kcal.toInt()}", "stima")))
+                if (coach) coachFeedbackRow(body)
                 body.addView(btn("Chiudi") { pop() })
                 beep(true); say("Scheda completata. Bravo! $min minuti.")
             } else {

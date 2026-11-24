@@ -17,6 +17,8 @@ data class Pose(
     val torso: Float = 180f, val head: Float = 0f, val arch: Float = 0f,
     val rUa: Float = 0f, val rFa: Float = 0f, val lUa: Float = 0f, val lFa: Float = 0f,
     val rTh: Float = 0f, val rSh: Float = 0f, val lTh: Float = 0f, val lSh: Float = 0f,
+    /** Quanto è staccato da terra (salti, o in piedi sul gradino). */
+    val air: Float = 0f,
 )
 
 /** Un esercizio del catalogo: come si chiama, come si fa, a cosa serve e i fotogrammi del disegno. */
@@ -34,8 +36,8 @@ data class Move(
     val timed get() = secs > 0
 }
 
-enum class Anchor { FEET, HANDS, CENTER }
-enum class Prop { NONE, WALL_FRONT, WALL_BACK }
+enum class Anchor { FEET, HANDS, CENTER, NEAR_FOOT }
+enum class Prop { NONE, WALL_FRONT, WALL_BACK, STEP }
 
 /** Catalogo degli esercizi con i disegni, e il generatore di schede. Niente Android qui: si prova con i test. */
 object Moves {
@@ -60,6 +62,7 @@ object Moves {
         lerpAngle(a.torso, b.torso, t), lerpAngle(a.head, b.head, t), a.arch + (b.arch - a.arch) * t,
         lerpAngle(a.rUa, b.rUa, t), lerpAngle(a.rFa, b.rFa, t), lerpAngle(a.lUa, b.lUa, t), lerpAngle(a.lFa, b.lFa, t),
         lerpAngle(a.rTh, b.rTh, t), lerpAngle(a.rSh, b.rSh, t), lerpAngle(a.lTh, b.lTh, t), lerpAngle(a.lSh, b.lSh, t),
+        a.air + (b.air - a.air) * t,
     )
 
     /** Punti dell'omino nella posa [p], con il bacino in (0, 0). */
@@ -96,6 +99,7 @@ object Moves {
     private fun anchorX(m: Move, o: FloatArray): Float = when (m.anchor) {
         Anchor.FEET -> (o[R_FOOT * 2] + o[L_FOOT * 2]) / 2
         Anchor.HANDS -> (o[R_HAND * 2] + o[L_HAND * 2]) / 2
+        Anchor.NEAR_FOOT -> o[R_FOOT * 2]
         Anchor.CENTER -> { var a = Float.MAX_VALUE; var b = -Float.MAX_VALUE; for (i in 0 until SPINE) { a = min(a, o[i * 2]); b = max(b, o[i * 2]) }; (a + b) / 2 }
     }
 
@@ -105,7 +109,8 @@ object Moves {
     private fun fit(m: Move): Fit = synchronized(fitCache) { fitCache.getOrPut(m.id) {
         var lo = Float.MAX_VALUE; var hi = -Float.MAX_VALUE; var top = 0f
         for (k in 0 until m.frames.size * 8) {
-            val o = raw(pose(m, k / 8f), m.front, m.armsFollow); val ax = anchorX(m, o); val low = lowest(o)
+            val ps = pose(m, k / 8f)
+            val o = raw(ps, m.front, m.armsFollow); val ax = anchorX(m, o); val low = lowest(o) + ps.air
             for (i in 0 until SPINE) { lo = min(lo, o[i * 2] - ax); hi = max(hi, o[i * 2] - ax); top = max(top, low - o[i * 2 + 1]) }
             lo = min(lo, o[HEAD * 2] - HEAD_R - ax); hi = max(hi, o[HEAD * 2] + HEAD_R - ax); top = max(top, low - o[HEAD * 2 + 1] + HEAD_R)
         }
@@ -126,8 +131,9 @@ object Moves {
     /** I punti da disegnare nel riquadro 100×100, col pavimento a y = [FLOOR]. */
     fun scale(m: Move) = fit(m).scale
     fun figure(m: Move, t: Float): FloatArray {
-        val o = raw(pose(m, t), m.front, m.armsFollow); val f = fit(m)
-        val ax = anchorX(m, o); val low = lowest(o)
+        val ps = pose(m, t)
+        val o = raw(ps, m.front, m.armsFollow); val f = fit(m)
+        val ax = anchorX(m, o); val low = lowest(o) + ps.air
         for (i in 0 until POINTS) { o[i * 2] = 50f + (o[i * 2] - ax + f.x) * f.scale; o[i * 2 + 1] = FLOOR - (low - o[i * 2 + 1]) * f.scale }
         return o
     }
@@ -348,7 +354,7 @@ object Moves {
             listOf(Pose(rUa = 8f, rFa = 8f, lUa = -8f, lFa = -8f, rTh = 3f, rSh = 3f, lTh = -3f, lSh = -3f),
                 Pose(rUa = 145f, rFa = 160f, lUa = -145f, lFa = -160f, rTh = 22f, rSh = 22f, lTh = -22f, lSh = -22f)),
             secs = 30, reps = 30, minLevel = 2, front = true),
-        Move("skip", "Skip alto", listOf("skip", "ginocchia alte", "corsa sul posto"), setOf("cardio", "jump"),
+        Move("skip", "Skip alto", listOf("skip", "ginocchia alte"), setOf("cardio", "jump"),
             "Corri sul posto portando le ginocchia all'altezza dei fianchi, braccia che spingono. Resta sulle punte.",
             listOf(Pose(torso = 175f, rUa = -40f, rFa = 50f, lUa = 50f, lFa = 140f, rTh = 92f, rSh = -5f, lTh = -5f, lSh = -10f),
                 Pose(torso = 175f, rUa = 50f, rFa = 140f, lUa = -40f, lFa = 50f, rTh = -5f, rSh = -10f, lTh = 92f, lSh = -5f)),
@@ -360,6 +366,75 @@ object Moves {
                 PLANK_HIGH,
                 Pose(torso = 120f, rUa = 10f, rFa = 0f, lUa = 12f, lFa = 2f, rTh = 120f, rSh = -40f, lTh = 122f, lSh = -38f)),
             reps = 8, minLevel = 3, anchor = Anchor.CENTER),
+
+        // ----- altri esercizi a corpo libero -----
+        Move("squat-salto", "Squat con salto", listOf("squat con salto", "squat jump", "jump squat"), setOf("legs", "cardio", "jump", "strength"),
+            "Scendi in squat con le braccia indietro, poi salta in alto spingendo con le gambe e slanciando le braccia. Atterra morbido e riscendi subito.",
+            listOf(Pose(torso = 145f, rUa = -40f, rFa = -30f, lUa = -38f, lFa = -28f, rTh = 82f, rSh = -18f, lTh = 84f, lSh = -16f),
+                Pose(torso = 178f, rUa = 165f, rFa = 170f, lUa = 167f, lFa = 172f, rTh = -4f, rSh = -12f, lTh = -2f, lSh = -10f, air = 14f)),
+            reps = 10, minLevel = 2, anchor = Anchor.CENTER),
+        Move("affondi-salto", "Affondi saltati", listOf("affondi saltati", "affondi con salto", "jumping lunge"), setOf("legs", "cardio", "jump", "strength"),
+            "Da un affondo salta e cambia gamba in aria, atterrando nell'affondo con l'altra gamba davanti. Busto dritto, atterraggio morbido.",
+            listOf(LUNGE.copy(rUa = 60f, rFa = 80f, lUa = -40f, lFa = 0f),
+                Pose(rUa = 10f, rFa = 40f, lUa = 10f, lFa = 40f, rTh = 25f, rSh = -15f, lTh = -10f, lSh = -30f, air = 12f),
+                Pose(rUa = -40f, rFa = 0f, lUa = 60f, lFa = 80f, rTh = -30f, rSh = -82f, lTh = 85f, lSh = 0f),
+                Pose(rUa = 10f, rFa = 40f, lUa = 10f, lFa = 40f, rTh = -10f, rSh = -30f, lTh = 25f, lSh = -15f, air = 12f)),
+            reps = 12, minLevel = 3, anchor = Anchor.CENTER),
+        Move("pistol", "Squat su una gamba", listOf("squat su una gamba", "pistol", "squat monopodalico"), setOf("legs", "strength"),
+            "In piedi su una gamba, l'altra tesa in avanti. Scendi piano più che puoi, tenendo il tallone a terra, e risali. All'inizio tieniti a una sedia.",
+            listOf(Pose(rUa = 90f, rFa = 90f, lUa = 92f, lFa = 92f, lTh = 45f, lSh = 45f),
+                Pose(torso = 142f, rUa = 95f, rFa = 95f, lUa = 97f, lFa = 97f, rTh = 105f, rSh = -32f, lTh = 88f, lSh = 88f)),
+            reps = 6, perSide = true, minLevel = 3, anchor = Anchor.NEAR_FOOT),
+        Move("pike", "Flessioni a V", listOf("flessioni a v", "pike"), setOf("upper", "strength"),
+            "Mani e piedi a terra con il bacino in alto, come una V rovesciata. Piega i gomiti e porta la testa verso terra tra le mani, poi spingi su. Lavora le spalle.",
+            listOf(Pose(torso = 45f, rUa = 45f, rFa = 45f, lUa = 46f, lFa = 46f, rTh = -20f, rSh = -20f, lTh = -21f, lSh = -21f),
+                Pose(torso = 28f, rUa = -25f, rFa = 70f, lUa = -24f, lFa = 71f, rTh = -24f, rSh = -24f, lTh = -25f, lSh = -25f)),
+            reps = 8, minLevel = 3, anchor = Anchor.HANDS),
+        Move("situp", "Sit-up", listOf("sit-up", "sit up", "situp", "addominali completi"), setOf("core", "strength"),
+            "Sdraiato, ginocchia piegate e piedi a terra. Sali fino a sederti portando le braccia in avanti, poi torna giù piano, vertebra dopo vertebra.",
+            listOf(SUPINE_KNEES.copy(rUa = -95f, rFa = -95f, lUa = -97f, lFa = -97f),
+                SUPINE_KNEES.copy(torso = 160f, arch = 2f, rUa = 100f, rFa = 100f, lUa = 102f, lFa = 102f)),
+            reps = 12, minLevel = 2, anchor = Anchor.FEET),
+        Move("plank-su-giu", "Plank su e giù", listOf("plank su e giù", "plank su e giu", "plank up"), setOf("core", "upper", "strength"),
+            "Dal plank sugli avambracci sali su una mano e poi sull'altra fino al plank a braccia tese, poi riscendi. Bacino fermo.",
+            listOf(Pose(torso = 103f, rUa = 0f, rFa = 90f, lUa = 3f, lFa = 92f, rTh = -77f, rSh = -77f, lTh = -76f, lSh = -76f), PLANK_HIGH),
+            reps = 10, minLevel = 2, anchor = Anchor.FEET),
+        Move("sprawl", "Sprawl", listOf("sprawl"), setOf("cardio", "core"),
+            "Come un burpee senza salto e senza flessione: mani a terra, butta i piedi indietro fino a sdraiarti, poi torna su veloce.",
+            listOf(Pose(rUa = 10f, rFa = 10f, lUa = 12f, lFa = 12f),
+                Pose(torso = 120f, rUa = 10f, rFa = 0f, lUa = 12f, lFa = 2f, rTh = 120f, rSh = -40f, lTh = 122f, lSh = -38f),
+                Pose(torso = 98f, head = 10f, arch = -3f, rUa = -10f, rFa = 0f, lUa = -8f, lFa = 2f, rTh = -88f, rSh = -88f, lTh = -87f, lSh = -87f),
+                Pose(torso = 120f, rUa = 10f, rFa = 0f, lUa = 12f, lFa = 2f, rTh = 120f, rSh = -40f, lTh = 122f, lSh = -38f)),
+            reps = 10, minLevel = 2, anchor = Anchor.CENTER),
+        Move("corsa", "Corsa sul posto", listOf("corsa sul posto", "corsa veloce", "running"), setOf("cardio", "warmup"),
+            "Corri sul posto veloce, sulle punte, con le braccia piegate che spingono avanti e indietro.",
+            listOf(Pose(torso = 172f, rUa = -45f, rFa = 60f, lUa = 45f, lFa = 130f, rTh = 50f, rSh = -20f, lTh = -10f, lSh = -40f, air = 3f),
+                Pose(torso = 172f, rUa = 45f, rFa = 130f, lUa = -45f, lFa = 60f, rTh = -10f, rSh = -40f, lTh = 50f, lSh = -20f, air = 3f)),
+            secs = 30),
+        Move("star-jump", "Salto a stella", listOf("salto a stella", "star jump", "stella"), setOf("cardio", "jump"),
+            "Accovacciati con le mani verso terra, poi salta in alto aprendo braccia e gambe a stella. Atterra morbido a gambe unite.",
+            listOf(Pose(torso = 180f, rUa = 15f, rFa = -10f, lUa = -15f, lFa = 10f, rTh = 60f, rSh = -15f, lTh = -60f, lSh = 15f),
+                Pose(rUa = 140f, rFa = 145f, lUa = -140f, lFa = -145f, rTh = 30f, rSh = 30f, lTh = -30f, lSh = -30f, air = 14f)),
+            reps = 10, minLevel = 2, front = true),
+        Move("step-up", "Salita sul gradino", listOf("step-up", "step up", "salita sul gradino", "gradino"), setOf("legs", "strength", "lowimpact"),
+            "Sali su un gradino o su una sedia ben ferma spingendo con il piede che è sopra, porta su l'altro ginocchio, poi scendi con calma.",
+            listOf(Pose(rUa = 20f, rFa = 40f, lUa = -20f, lFa = 10f, rTh = 75f, rSh = -10f),
+                Pose(rUa = -20f, rFa = 10f, lUa = 20f, lFa = 40f, rTh = 0f, rSh = 0f, lTh = 70f, lSh = -5f, air = 15.1f)),
+            reps = 10, perSide = true, anchor = Anchor.NEAR_FOOT, prop = Prop.STEP),
+        Move("affondo-laterale", "Affondo laterale", listOf("affondo laterale", "affondi laterali", "lateral lunge"), setOf("legs", "strength", "mobility"),
+            "Gambe larghe. Piega un ginocchio spingendo il bacino indietro e di lato, l'altra gamba resta tesa. Torna al centro e cambia lato.",
+            listOf(Pose(rUa = 20f, rFa = -110f, lUa = -20f, lFa = 110f, rTh = 20f, rSh = 20f, lTh = -20f, lSh = -20f),
+                Pose(torso = 170f, rUa = 20f, rFa = -110f, lUa = -20f, lFa = 110f, rTh = 60f, rSh = -5f, lTh = -50f, lSh = -50f)),
+            reps = 10, perSide = true, front = true),
+        Move("barchetta", "Barchetta", listOf("barchetta", "hollow", "barca"), setOf("core", "strength"),
+            "Sdraiato, stacca da terra spalle e gambe tese, braccia lunghe sopra la testa: il corpo fa una barchetta. La parte bassa della schiena resta appoggiata.",
+            listOf(Pose(torso = -110f, head = 10f, rUa = -125f, rFa = -125f, lUa = -127f, lFa = -127f, rTh = 108f, rSh = 108f, lTh = 110f, lSh = 110f),
+                Pose(torso = -113f, head = 10f, rUa = -128f, rFa = -128f, lUa = -130f, lFa = -130f, rTh = 112f, rSh = 112f, lTh = 114f, lSh = 114f)),
+            secs = 20, minLevel = 2, anchor = Anchor.CENTER),
+        Move("ponte-una-gamba", "Ponte su una gamba", listOf("ponte su una gamba", "ponte monopodalico"), setOf("legs", "core", "strength"),
+            "Come il ponte per i glutei, ma con una gamba tesa in alto. Spingi con il tallone a terra e sali, senza far cadere il bacino da un lato.",
+            listOf(SUPINE_KNEES.copy(lTh = 150f, lSh = 150f), Pose(torso = -58f, rUa = 90f, rFa = 90f, lUa = 92f, lFa = 92f, rTh = 100f, rSh = 12f, lTh = 122f, lSh = 122f)),
+            reps = 10, perSide = true, minLevel = 2),
     )
 
     private val byId = ALL.associateBy { it.id }
@@ -412,8 +487,8 @@ object Moves {
     }
     val LEVELS = listOf("Principiante", "Intermedio", "Avanzato")
 
-    private fun pool(goal: Goal, level: Int): List<Move> {
-        fun ok(m: Move) = level in m.minLevel..m.maxLevel && (level > 1 || "jump" !in m.tags)
+    private fun pool(goal: Goal, level: Int, noJumps: Boolean = false): List<Move> {
+        fun ok(m: Move) = level in m.minLevel..m.maxLevel && (level > 1 || "jump" !in m.tags) && !(noJumps && "jump" in m.tags)
         val want: (Move) -> Boolean = when (goal) {
             Goal.STRETCH -> { m -> "stretch" in m.tags }
             Goal.MOBILITY -> { m -> "mobility" in m.tags }
@@ -443,7 +518,7 @@ object Moves {
      * Crea una scheda: [minutes] minuti circa, [level] 0..2. [seed] cambia la scelta degli esercizi («Un'altra»).
      * Allenamenti: 2 esercizi di riscaldamento, il blocco principale, 2 allungamenti finali.
      */
-    fun generate(goal: Goal, minutes: Int, level: Int, seed: Long): WorkoutPlan {
+    fun generate(goal: Goal, minutes: Int, level: Int, seed: Long, noJumps: Boolean = false): WorkoutPlan {
         val lv = level.coerceIn(0, 2); val rnd = Random(seed)
         val target = minutes.coerceIn(5, 90) * 60
         fun secs(l: List<Ex>) = l.sumOf { e -> e.sets * ((if (e.seconds > 0) e.seconds else 40) + e.restSec) }
@@ -451,7 +526,7 @@ object Moves {
         val hold = listOf(30, 40, 45)[lv]
         when (goal) {
             Goal.STRETCH, Goal.MOBILITY -> {
-                val p = pool(goal, lv + 1).shuffled(rnd).let { l -> if (goal == Goal.MOBILITY) l.sortedBy { if (it.id == "collo" || it.id == "spalle") 0 else 1 } else l }
+                val p = pool(goal, lv + 1, noJumps).shuffled(rnd).let { l -> if (goal == Goal.MOBILITY) l.sortedBy { if (it.id == "collo" || it.id == "spalle") 0 else 1 } else l }
                 val queue = p.toMutableList()
                 while (secs(out) < target && queue.isNotEmpty()) {
                     val m = queue.removeAt(0)
@@ -462,16 +537,17 @@ object Moves {
                 while (secs(out) < target - 45 && out.isNotEmpty() && i < 40) { val k = i % out.size; out[k] = out[k].copy(sets = out[k].sets + (if (out[k].name.endsWith("(per lato)")) 2 else 1)); i++ }
             }
             else -> {
-                val warmMoves = ALL.filter { "warmup" in it.tags && "jump" !in it.tags }.shuffled(rnd).take(2)
+                val short = minutes <= 10   // schede brevi: un solo esercizio di riscaldamento e uno di allungamento
+                val warmMoves = ALL.filter { "warmup" in it.tags && "jump" !in it.tags }.shuffled(rnd).take(if (short) 1 else 2)
                 val warm = warmMoves.map { if (it.secs > 0) toEx(it, lv, 1, 10, workSecs = 30) else toEx(it, lv, 1, 10).copy(reps = 10) }
                 val coolPool = when (goal) { Goal.LEGS -> listOf("quadricipite", "femorali", "flessori", "polpacci"); Goal.BACK, Goal.CORE -> listOf("bambino", "cobra", "ginocchia-petto", "gatto"); else -> listOf("bambino", "femorali", "flessori", "avanti", "quadricipite") }
-                val coolMoves = coolPool.shuffled(rnd).take(2).mapNotNull { byId(it) }
+                val coolMoves = coolPool.shuffled(rnd).take(if (short) 1 else 2).mapNotNull { byId(it) }
                 val cool = coolMoves.map { toEx(it, lv, 1, 10, holdSecs = 30) }
                 val cardio = goal == Goal.CARDIO
                 val sets = listOf(2, 3, 3)[lv]
                 val rest = if (cardio) listOf(30, 20, 15)[lv] else listOf(45, 40, 30)[lv]
                 val work = listOf(25, 35, 40)[lv]
-                var main = pool(goal, lv + 1).filter { it !in warmMoves && it !in coolMoves }.shuffled(rnd)
+                var main = pool(goal, lv + 1, noJumps).filter { it !in warmMoves && it !in coolMoves }.shuffled(rnd)
                 if (goal == Goal.BACK) main = main.sortedBy { if ("strength" in it.tags) 0 else 1 }   // prima il rinforzo, poi gli allungamenti
                 if (goal == Goal.FULL) {   // a turno gambe, parte alta, addominali
                     val groups = listOf("legs", "upper", "core").map { g -> main.filter { g in it.tags }.toMutableList() }
@@ -484,7 +560,9 @@ object Moves {
                 for (m in main) {
                     if (fixed + secs(body) >= target) break
                     val easy = "strength" !in m.tags && !cardio   // un allungamento in mezzo: riposo breve
-                    body += if (cardio) toEx(m, lv, sets, rest, workSecs = work) else toEx(m, lv, if (easy) 1 else sets, if (easy) 15 else rest, holdSecs = if (easy && m.timed) hold else null)
+                    val ex = if (cardio) toEx(m, lv, sets, rest, workSecs = work) else toEx(m, lv, if (easy) 1 else sets, if (easy) 15 else rest, holdSecs = if (easy && m.timed) hold else null)
+                    if (body.isNotEmpty() && fixed + secs(body + ex) > target + 120) continue   // troppo lungo: si prova il prossimo
+                    body += ex
                 }
                 var i = 0
                 while (fixed + secs(body) < target - 60 && body.isNotEmpty() && i < 30) { val k = i % body.size; body[k] = body[k].copy(sets = body[k].sets + (if (body[k].name.endsWith("(per lato)")) 2 else 1)); i++ }

@@ -81,6 +81,10 @@ object Selftest {
                 "tabata" -> a.openTabata()
                 "generator" -> a.openGenerator(Moves.Goal.STRETCH)
                 "moves" -> a.openMoves()
+                "coach" -> { CoachStore.plan(a) ?: CoachStore.save(a, CoachPlan()); a.openCoach() }
+                "coachchat" -> a.openCoachChat()
+                "challenges" -> a.openChallenges()
+                "challenge" -> a.runChallenge(Challenges.ALL[0])
                 "acts" -> a.openActs()
                 "hc" -> a.openHcConnect()
                 else -> {}

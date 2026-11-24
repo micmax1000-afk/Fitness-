@@ -42,6 +42,7 @@ class MoveView(c: Context, var move: Move?, private val animate: Boolean = true)
         when (m.prop) {
             Prop.WALL_FRONT -> { val f0 = Moves.figure(m, 0f); val wx = maxOf(f0[Moves.R_HAND * 2], f0[Moves.L_HAND * 2]) + w / 2; cv.drawRect(wx, 8f, wx + 4f, Moves.FLOOR + 2f, wall) }
             Prop.WALL_BACK -> { val f0 = Moves.figure(m, 0f); val wx = minOf(f0[Moves.HIP * 2], f0[Moves.NECK * 2]) - w * 0.6f; cv.drawRect(wx - 4f, 8f, wx, Moves.FLOOR + 2f, wall) }
+            Prop.STEP -> { val f0 = Moves.figure(m, 0f); val fx = f0[Moves.R_FOOT * 2]; val fy = f0[Moves.R_FOOT * 2 + 1] + w / 2; cv.drawRoundRect(fx - 10f, fy, fx + 12f, Moves.FLOOR + w / 2 + 1f, 2f, 2f, wall) }
             Prop.NONE -> {}
         }
         fun seg(a: Int, b: Int, p: Paint) = cv.drawLine(x(a), y(a), x(b), y(b), p)
