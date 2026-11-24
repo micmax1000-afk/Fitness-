@@ -227,7 +227,7 @@ fun MainActivity.openTrain() {
             sectionLabel(body, "IL TUO COACH")
             val cp = CoachStore.plan(this)
             listRow(body, "🎯", "Coach", if (cp == null) "Un programma per te, che si adatta a come va: scegli obiettivo e giorni" else "${Coach.GOALS[cp.goal]?.first} · ${cp.days} giorni a settimana · livello ${Moves.LEVELS[Coach.level(cp)].lowercase()}") { openCoach() }
-            listRow(body, "💬", "Scrivi al coach", "Chat con l'AI (Gemini, Groq o NVIDIA, con la tua chiave)") { openCoachChat() }
+            listRow(body, "💬", "Scrivi al coach", "Chat con l'AI (Gemini o Groq, con la tua chiave)") { openCoachChat() }
             sectionLabel(body, "ALLENATI")
             listRow(body, "⏱", "Contro il tempo", "Giri da finire il prima possibile, con il tuo record") { openChallenges() }
             listRow(body, "✨", "Crea una scheda", "Stretching, mobilità, gambe, addominali, cardio…: scegli tempo e livello") { openGenerator() }

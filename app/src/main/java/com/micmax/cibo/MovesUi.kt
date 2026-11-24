@@ -168,6 +168,17 @@ fun MainActivity.showMove(m: Move) {
 fun MainActivity.openMoves() {
     openScreen("Esercizi") { body, _ ->
         hintLabel(body, "Tocca un esercizio per vedere come si fa. Nelle schede il disegno compare da solo se il nome somiglia a uno di questi.")
+        listRow(body, "✨", "Crea un esercizio con l'AI", if (AiKeys.ready(this).isEmpty()) "Serve la chiave di Groq o Gemini" else "Descrivilo: l'AI scrive la scheda e disegna l'omino") { createMoveDialog() }
+        if (Moves.custom.isNotEmpty()) {
+            sectionLabel(body, "CREATI CON L'AI · ${Moves.custom.size}")
+            Moves.custom.forEach { m -> moveRow(body, m, m.name, "Tocca per vederlo · tieni premuto per toglierlo") { showMove(m) } }
+            // tenendo premuto si toglie
+            (0 until body.childCount).map { body.getChildAt(it) }.takeLast(Moves.custom.size).zip(Moves.custom).forEach { (v, m) ->
+                v.setOnLongClickListener {
+                    MaterialAlertDialogBuilder(this).setTitle("Togliere «${m.name}»?").setPositiveButton("Togli") { _, _ -> CustomMoves.remove(this, m.id); pop(); openMoves() }.setNegativeButton("No", null).show(); true
+                }
+            }
+        }
         listOf("attrezzi" to "CON GLI ATTREZZI", "balance" to "EQUILIBRIO", "stretch" to "STRETCHING", "mobility" to "MOBILITÀ E RISCALDAMENTO", "legs" to "GAMBE E GLUTEI", "upper" to "PARTE ALTA", "core" to "ADDOMINALI E SCHIENA", "cardio" to "CARDIO").let { groups ->
             val shown = HashSet<String>()
             groups.forEach { (tag, label) ->
@@ -249,3 +260,61 @@ fun MainActivity.openGenerator(start: Moves.Goal? = null) {
         render()
     }
 }
+
+// ======================= esercizi creati con l'AI =======================
+
+/** Gli esercizi creati con l'AI e salvati: restano sul telefono e si aggiungono al catalogo. */
+object CustomMoves {
+    data class Entry(val move: Move, val info: MoveInfo)
+    private fun prefs(c: Context) = c.getSharedPreferences("allenamento", Context.MODE_PRIVATE)
+    fun entries(c: Context): List<Entry> = runCatching {
+        com.google.gson.Gson().fromJson<List<Entry>>(prefs(c).getString("custom_moves", null), object : com.google.gson.reflect.TypeToken<List<Entry>>() {}.type)
+    }.getOrNull().orEmpty().filter { it.move != null && it.info != null && it.move.frames != null && it.move.frames.size >= 2 }
+    fun load(c: Context) { val l = entries(c); Moves.setCustom(l.map { it.move }); MoveInfos.setCustom(l.associate { it.move.id to it.info }) }
+    fun add(c: Context, e: Entry) { prefs(c).edit().putString("custom_moves", com.google.gson.Gson().toJson(entries(c).filter { it.move.id != e.move.id } + e)).apply(); load(c) }
+    fun remove(c: Context, id: String) { prefs(c).edit().putString("custom_moves", com.google.gson.Gson().toJson(entries(c).filter { it.move.id != id })).apply(); load(c) }
+}
+
+/** Descrivi un esercizio: l'AI scrive la scheda e le pose; vedi l'anteprima animata e decidi se tenerlo. */
+fun MainActivity.createMoveDialog(prefill: String = "") {
+    if (AiKeys.ready(this).isEmpty()) { aiSettings { }; return }
+    val desc = field("Es. «esercizio per le spalle con l'elastico» o «addominali da seduto»", prefill, multiline = true).apply { minLines = 2 }
+    MaterialAlertDialogBuilder(this).setTitle("✨ Crea un esercizio").setView(form(desc, TextView(this).apply {
+        text = "L'AI usa solo gli attrezzi che hai segnato nel coach. Prima di salvare vedi il disegno e la scheda."; textSize = 12.5f; setTextColor(col(R.color.muted)); setPadding(0, dp(8), 0, 0)
+    })).setPositiveButton("Crea") { _, _ ->
+        val d = desc.text.toString().trim()
+        if (d.length < 3) { toast("Scrivi che esercizio vuoi"); return@setPositiveButton }
+        val wait = MaterialAlertDialogBuilder(this).setTitle("L'AI sta creando l'esercizio…").setMessage("Qualche secondo.").setCancelable(false).show()
+        val equip = CoachStore.plan(this)?.equip.orEmpty()
+        io.execute {
+            val r = CoachAi.ask(this, listOf("user" to Coach.exerciseRequest(d, equip)), maxTokens = 2500)
+            runOnUiThread {
+                wait.dismiss()
+                r.onSuccess { text ->
+                    val parsed = Coach.parseExercise(text, "ai-" + java.util.UUID.randomUUID().toString().take(8))
+                    if (parsed == null) MaterialAlertDialogBuilder(this).setTitle("Non sono riuscito a leggere l'esercizio").setMessage("L'AI non ha risposto nel formato giusto. Riprova: spesso basta una seconda volta.").setPositiveButton("Riprova") { _, _ -> createMoveDialog(d) }.setNegativeButton("Chiudi", null).show()
+                    else previewCustomMove(parsed.first, parsed.second, d)
+                }.onFailure { e -> MaterialAlertDialogBuilder(this).setTitle("Non sono riuscito a chiedere all'AI").setMessage(e.message).setPositiveButton("Ok", null).show() }
+            }
+        }
+    }.setNegativeButton("Annulla", null).show()
+}
+
+private fun MainActivity.previewCustomMove(m: Move, info: MoveInfo, desc: String) {
+    val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(6), dp(20), dp(4)) }
+    box.addView(moveView(m, 200))
+    box.addView(TextView(this).apply { text = m.how; textSize = 14.5f; setTextColor(col(R.color.text)); setPadding(0, dp(10), 0, dp(4)) })
+    box.addView(TextView(this).apply {
+        text = info.steps.mapIndexed { i, t -> "${i + 1}. $t" }.joinToString("\n") +
+            "\n\nMuscoli: " + info.primary.joinToString(", ") { MoveInfos.MUSCLES[it] ?: it } +
+            (if (m.equip.isNotEmpty()) "\nAttrezzi: " + m.equip.joinToString(", ") { MoveInfos.EQUIPMENT[it] ?: it } else "") +
+            "\n" + (if (m.secs > 0 && m.reps == 0) "${m.secs} secondi" else "${m.reps} ripetizioni") + if (m.perSide) " per lato" else ""
+        textSize = 13.5f; setTextColor(col(R.color.muted))
+    })
+    box.addView(TextView(this).apply { text = "Il disegno lo fa l'AI: se non ti convince, tocca «Rifai»."; textSize = 12f; setTextColor(col(R.color.muted)); setPadding(0, dp(8), 0, 0) })
+    MaterialAlertDialogBuilder(this).setTitle("✨ ${m.name}").setView(android.widget.ScrollView(this).apply { addView(box) })
+        .setPositiveButton("Salva") { _, _ -> CustomMoves.add(this, CustomMoves.Entry(m, info)); toast("✓ «${m.name}» aggiunto agli esercizi"); pop(); openMoves() }
+        .setNeutralButton("Rifai") { _, _ -> createMoveDialog(desc) }
+        .setNegativeButton("Annulla", null).show()
+}
+

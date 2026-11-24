@@ -465,7 +465,9 @@ object MoveInfos {
     )
 
     /** La scheda dell'esercizio; per quelli che non hanno scheda propria, una scheda semplice dai dati del catalogo. */
-    fun of(id: String): MoveInfo = ALL[id] ?: MoveInfo(id, null, emptySet(), emptySet(), 1, emptySet(), null, null, emptyList(), emptyList(), HOLD_BREATH, "", "")
+    @Volatile private var customInfo: Map<String, MoveInfo> = emptyMap()
+    fun setCustom(m: Map<String, MoveInfo>) { customInfo = m }
+    fun of(id: String): MoveInfo = ALL[id] ?: customInfo[id] ?: MoveInfo(id, null, emptySet(), emptySet(), 1, emptySet(), null, null, emptyList(), emptyList(), HOLD_BREATH, "", "")
 
     /** Indirizzo della foto (free-exercise-db, pubblico dominio): 0 = posizione di partenza, 1 = arrivo. */
     fun photoUrl(photo: String, n: Int) = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/$photo/$n.jpg"

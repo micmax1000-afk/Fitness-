@@ -855,11 +855,18 @@ object Moves {
     )
 
     private val byId = ALL.associateBy { it.id }
-    fun byId(id: String) = byId[id]
+    fun byId(id: String) = byId[id] ?: custom.firstOrNull { it.id == id }
+
+    /** Esercizi creati con l'AI e salvati dalla persona: si aggiungono al catalogo. */
+    @Volatile var custom: List<Move> = emptyList(); private set
+    fun setCustom(l: List<Move>) { custom = l; keyIndex = buildIndex() }
+    /** Tutti gli esercizi: quelli dell'app più quelli creati con l'AI. */
+    fun every(): List<Move> = ALL + custom
 
     fun norm(s: String): String = Normalizer.normalize(s.lowercase(), Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "").replace('’', '\'')
 
-    private val keyIndex: List<Pair<String, Move>> = ALL.flatMap { m -> (m.keys + m.name).map { norm(it) to m } }.sortedByDescending { it.first.length }
+    private fun buildIndex(): List<Pair<String, Move>> = (ALL + custom).flatMap { m -> (m.keys + m.name).map { norm(it) to m } }.filter { it.first.isNotBlank() }.sortedByDescending { it.first.length }
+    @Volatile private var keyIndex: List<Pair<String, Move>> = buildIndex()
 
     /** L'esercizio del catalogo che corrisponde a un nome scritto a mano («Plank laterale (per lato)» → plank laterale). Vince la parola più lunga. */
     fun find(name: String): Move? { val n = norm(name); return keyIndex.firstOrNull { n.contains(it.first) }?.second }
@@ -929,7 +936,7 @@ object Moves {
             Goal.BACK -> { m -> "back" in m.tags }
             Goal.BALANCE -> { m -> "balance" in m.tags || m.id in setOf("ponte", "bird-dog", "squat", "flessioni-muro") }
         }
-        return ALL.filter { want(it) && ok(it) }
+        return every().filter { want(it) && ok(it) }
     }
 
     /** Se con queste scelte non resta niente (poco spazio, niente attrezzi…), si allarga un po' la scelta: prima altri livelli, poi altri tipi. */

@@ -106,6 +106,17 @@ object CoachAi {
         return lines.joinToString("\n")
     }
 
+    /** L'elenco dei modelli del servizio per questa chiave. Fuori dal thread principale. */
+    fun models(p: Coach.Provider, key: String): Result<List<String>> = runCatching {
+        val conn = URL(p.modelsUrl).openConnection() as HttpURLConnection
+        conn.connectTimeout = 15000; conn.readTimeout = 20000
+        conn.setRequestProperty("Authorization", "Bearer $key")
+        val code = conn.responseCode
+        val body = (if (code in 200..299) conn.inputStream else conn.errorStream)?.use { it.readBytes().toString(Charsets.UTF_8) }
+        if (code !in 200..299) error(Coach.errorText(code, body))
+        Coach.parseModels(body.orEmpty())
+    }
+
     /** Chiede al primo servizio con la chiave; se non risponde prova il successivo. Da chiamare fuori dal thread principale. */
     fun ask(c: Context, history: List<Pair<String, String>>, maxTokens: Int = 900): Result<String> {
         val providers = AiKeys.ready(c)
@@ -209,7 +220,7 @@ fun MainActivity.openCoach() {
             val last = CoachStore.fitResults(this).lastOrNull()
             listRow(body, "📋", "Test di forma", last?.let { r -> val lv = FitTest.levels(r, bodyInfo); "Ultimo: ${java.time.Instant.ofEpochMilli(r.date).atZone(java.time.ZoneId.systemDefault()).toLocalDate().let { "${it.dayOfMonth}/${it.monthValue}" }} · livello ${Moves.LEVELS[lv["overall"] ?: 0].lowercase()}" + if (System.currentTimeMillis() - r.date > 28 * 86_400_000L) " · è ora di rifarlo" else "" }
                 ?: "5 minuti per capire da dove partire: flessioni, squat e plank") { openFitTest() }
-            listRow(body, "✨", "Programma di 4 settimane con l'AI", if (AiKeys.ready(this).isEmpty()) "Serve la chiave di Groq, Gemini o NVIDIA" else "Su misura con età, peso, test di forma, attrezzi e spazio") { aiProgramDialog { render() } }
+            listRow(body, "✨", "Programma di 4 settimane con l'AI", if (AiKeys.ready(this).isEmpty()) "Serve la chiave di Groq o Gemini" else "Su misura con età, peso, test di forma, attrezzi e spazio") { aiProgramDialog { render() } }
             val optsLine = listOfNotNull(
                 p.equip.orEmpty().takeIf { it.isNotEmpty() }?.joinToString(", ") { MoveInfos.EQUIPMENT[it]?.substringBefore(" (")?.lowercase() ?: it } ?: "corpo libero",
                 MoveInfos.SPACES[p.space.coerceIn(0, 2)].lowercase(),
@@ -222,7 +233,7 @@ fun MainActivity.openCoach() {
             })
             if (bodyInfo.age == null || bodyInfo.bmi == null) hintLabel(body, "Inserisci età, altezza e peso in «Fabbisogno»: il coach adatta il programma anche a questi.")
             sectionLabel(body, "CHIEDI AL COACH")
-            listRow(body, "✨", "Scrivi al coach", if (AiKeys.ready(this).isEmpty()) "Con Gemini, Groq o NVIDIA: aggiungi la tua chiave" else "«Ho 15 minuti e mi fanno male le ginocchia…»") { openCoachChat() }
+            listRow(body, "✨", "Scrivi al coach", if (AiKeys.ready(this).isEmpty()) "Con Gemini o Groq: aggiungi la tua chiave" else "«Ho 15 minuti e mi fanno male le ginocchia…»") { openCoachChat() }
             sectionLabel(body, "LA TUA SETTIMANA")
             week.forEach { d ->
                 val name = d.date.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.ITALIAN).replaceFirstChar { it.uppercase() }
@@ -368,7 +379,7 @@ fun MainActivity.openCoachChat() {
             body.removeAllViews()
             if (chat.isEmpty()) {
                 emptyState(body, "✨", "Chiedi al tuo coach", if (AiKeys.ready(this).isEmpty())
-                    "Per la chat serve la chiave di un servizio AI: Groq, Google Gemini o NVIDIA (molti hanno un piano gratuito). La chiave resta solo su questo telefono."
+                    "Per la chat serve la chiave di un servizio AI: Groq o Google Gemini (hanno un piano gratuito). La chiave resta solo su questo telefono."
                 else "Scrivi come a un allenatore: cosa vuoi ottenere, quanto tempo hai, se qualcosa ti fa male. Se serve ti preparo una scheda da fare subito.",
                     if (AiKeys.ready(this).isEmpty()) "Aggiungi la chiave" else null, if (AiKeys.ready(this).isEmpty()) ({ aiSettings { refreshTop() } }) else null)
                 if (AiKeys.ready(this).isNotEmpty()) {
@@ -432,7 +443,31 @@ fun MainActivity.aiSettings(done: () -> Unit) {
         box.addView(TextView(this).apply { text = p.label; textSize = 15f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(col(R.color.text)); setPadding(0, dp(12), 0, 0) })
         val key = field("Chiave (${p.keyHint})", AiKeys.key(this, p.id)).apply { inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD; typeface = android.graphics.Typeface.MONOSPACE }
         val model = field("Modello", AiKeys.model(this, p)).apply { textSize = 13f }
-        box.addView(key); box.addView(model)
+        box.addView(key)
+        // il modello si sceglie dall'elenco che il servizio dà per questa chiave
+        box.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            addView(model, LinearLayout.LayoutParams(0, -2, 1f))
+            addView(MaterialButton(this@aiSettings, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                text = "Scegli"; isAllCaps = false
+                setOnClickListener {
+                    val k = key.text.toString().trim()
+                    if (k.isBlank()) { toast("Prima incolla la chiave di ${p.label}"); return@setOnClickListener }
+                    text = "…"; isEnabled = false
+                    io.execute {
+                        val r = CoachAi.models(p, k)
+                        runOnUiThread {
+                            text = "Scegli"; isEnabled = true
+                            r.onSuccess { list ->
+                                if (list.isEmpty()) toast("Nessun modello trovato")
+                                else MaterialAlertDialogBuilder(this@aiSettings).setTitle("Modelli di ${p.label}")
+                                    .setSingleChoiceItems(list.toTypedArray(), list.indexOf(model.text.toString().trim())) { d, w -> model.setText(list[w]); d.dismiss() }.show()
+                            }.onFailure { e -> MaterialAlertDialogBuilder(this@aiSettings).setTitle("Non riesco a leggere i modelli").setMessage(e.message).setPositiveButton("Ok", null).show() }
+                        }
+                    }
+                }
+            }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(6) })
+        })
         Triple(p, key, model)
     }
     box.addView(TextView(this).apply { text = "SERVIZIO DA PROVARE PRIMA"; textSize = 12f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(col(R.color.muted)); setPadding(0, dp(14), 0, dp(2)) })

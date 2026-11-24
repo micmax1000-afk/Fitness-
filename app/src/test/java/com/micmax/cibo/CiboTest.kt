@@ -359,4 +359,30 @@ class TrainingTest {
         assertTrue(Moves.generate(Moves.Goal.BALANCE, 15, 0, 2L).exercises.any { "balance" in (Moves.find(it.name)?.tags ?: emptySet()) })
         assertEquals(131, Moves.ALL.size)
     }
+
+    @Test fun aiExercises() {
+        assertEquals(listOf("gemini", "groq"), Coach.PROVIDERS.map { it.id }.sorted())
+        val models = Coach.parseModels("""{"data":[{"id":"llama-3.3-70b-versatile"},{"id":"whisper-large-v3"},{"id":"models/gemini-2.5-flash"},{"id":"text-embedding-004"}]}""")
+        assertEquals(listOf("gemini-2.5-flash", "llama-3.3-70b-versatile"), models)
+        assertTrue(Coach.parseModels("non json").isEmpty())
+        val reply = "Ecco:\n```json\n" + """{"nome": "Rematore seduto con l'elastico", "descrizione": "Seduto, elastico intorno ai piedi. Tira verso la pancia.", "passi": ["Siediti", "Tira", "Torna"], "errori": ["Schiena curva"],
+            "respiro": "Espira tirando", "consiglio": "Scapole strette", "attenzione": "", "muscoli": ["dorsali", "inventato"], "muscoli_secondari": ["bicipiti"], "attrezzi": ["elastico", "bilanciere"],
+            "tipo": ["upper", "back"], "livello": 5, "ripetizioni": 500, "secondi": 0, "per_lato": false, "salti": false, "spazio": 1, "vista": "profilo",
+            "pose": [{"torso": 175, "rUa": 90, "rFa": 90, "lUa": 92, "lFa": 92, "rTh": 90, "rSh": 90, "lTh": 92, "lSh": 92}, {"torso": 170, "rUa": -40, "rFa": 80, "lUa": -38, "lFa": 82, "rTh": 90, "rSh": 90, "lTh": 92, "lSh": 92, "air": 99}]}""" + "\n```"
+        val (m, info) = Coach.parseExercise(reply, "ai-test")!!
+        assertEquals("Rematore seduto con l'elastico", m.name)
+        assertEquals(setOf("elastico"), m.equip); assertEquals(3, m.minLevel); assertEquals(60, m.reps)   // tenuti nei limiti
+        assertEquals(setOf("dorsali"), info.primary); assertEquals(20.0, m.frames[1].air.toDouble(), 0.001)
+        assertTrue("strength" in m.tags && "upper" in m.tags)
+        assertNull(Coach.parseExercise("{\"nome\": \"x\"}", "ai-x"))
+        // nel catalogo: si trova per nome e può entrare nelle schede
+        Moves.setCustom(listOf(m)); MoveInfos.setCustom(mapOf(m.id to info))
+        try {
+            assertEquals("ai-test", Moves.find("Rematore seduto con l'elastico (per lato)")?.id)
+            assertEquals(setOf("dorsali"), MoveInfos.of("ai-test").primary)
+            Moves.figure(m, 0.5f)
+            assertTrue(Coach.exerciseRequest("spalle", listOf("elastico")).contains("Rematore seduto con l'elastico"))
+        } finally { Moves.setCustom(emptyList()); MoveInfos.setCustom(emptyMap()) }
+        assertNull(Moves.byId("ai-test"))
+    }
 }
